@@ -1,0 +1,934 @@
+/* ============================================================================
+   Tesla 车机娱乐系统 · 通用组件库 (app.css)
+   ----------------------------------------------------------------------------
+   与 tokens.css 配套：tokens 定义"值"，这里定义"构件"。
+   页面只写自己特有的东西，不再各写一套按钮/卡片/侧栏。
+
+   设计取向(为车机优化)
+     · 触摸目标 ≥44px：车机上用鼠标/触摸，小按钮点不准
+     · 高对比、大字号：白天反光下也要看清
+     · 少动画：车机 GPU 弱，动画容易掉帧
+     · 不做 hover-only 交互：触摸设备没有 hover
+
+   布局约定
+     页面骨架统一为 .tp-app > (.tp-sidebar + .tp-main)，或 .tp-app--top
+     高度一律用 flex + 100% 撑满，**不用 vh/vw**
+     —— 原因见 viewport.js：车机会把页面整体 zoom，vh/vw 会被一起缩放，
+        旧方案靠运行时改写 <style> 文本来抵消，脆弱且对外部样式表无效。
+        用 flex 撑满则天然不受 zoom 影响。
+   ============================================================================ */
+
+/* ── 重置 ────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+/* hidden 属性必须真的隐藏。
+   坑：只要 CSS 里给元素写了 display（如 .tp-btn{display:inline-flex}），
+   就会覆盖 hidden 自带的 display:none，导致 hidden 形同虚设。
+   重写前 live 页的播放视图因此和频道列表同时显示。 */
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--tp-bg);
+  color: var(--tp-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+               'Hiragino Sans GB', 'Microsoft YaHei', Roboto, sans-serif;
+  font-size: var(--tp-fs-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 允许页面滚动时用这个类（默认 body 不滚动，避免车机上整页橡皮筋） */
+.tp-scroll-y { overflow-y: auto; overflow-x: hidden; }
+
+img { max-width: 100%; display: block; }
+
+a { color: var(--tp-accent); text-decoration: none; }
+a:hover { color: var(--tp-accent-2); }
+
+/* ── 滚动条(细，车机上更好点) ────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2f3740; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #3d4753; }
+
+/* ============================================================================
+   页面骨架
+   ============================================================================ */
+
+.tp-app {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* 顶部栏式骨架(直播页用) */
+.tp-app--col { flex-direction: column; }
+
+.tp-sidebar {
+  width: var(--tp-side);
+  flex: 0 0 var(--tp-side);
+  background: var(--tp-surface);
+  border-right: 1px solid var(--tp-line);
+  display: flex;
+  flex-direction: column;
+  gap: var(--tp-sp-3);
+  padding: var(--tp-sp-4);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.tp-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* 顶栏 */
+.tp-topbar {
+  height: var(--tp-topbar);
+  flex: 0 0 var(--tp-topbar);
+  display: flex;
+  align-items: center;
+  gap: var(--tp-sp-3);
+  padding: 0 var(--tp-sp-4);
+  background: var(--tp-surface);
+  border-bottom: 1px solid var(--tp-line);
+}
+
+.tp-topbar__title {
+  font-size: var(--tp-fs-md);
+  font-weight: 600;
+  color: var(--tp-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.tp-topbar__spacer { flex: 1 1 auto; }
+
+/* 侧栏头部：返回按钮在上、标题在下（重写前 player/music 是竖排，bili/live 是横排） */
+.tp-side-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--tp-sp-3);
+  padding-bottom: var(--tp-sp-2);
+}
+
+.tp-side-title {
+  font-size: var(--tp-fs-lg);
+  font-weight: 600;
+  color: var(--tp-accent);
+  line-height: 1.2;
+}
+
+.tp-side-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tp-sp-2);
+}
+
+.tp-side-label {
+  font-size: var(--tp-fs-sm);
+  color: var(--tp-dim);
+  text-transform: none;
+  letter-spacing: .02em;
+}
+
+/* ============================================================================
+   按钮
+   ============================================================================ */
+
+.tp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--tp-touch);
+  padding: 0 var(--tp-sp-4);
+  background: var(--tp-surface-3);
+  color: var(--tp-text-2);
+  border: 1px solid var(--tp-line-2);
+  border-radius: var(--tp-r);
+  font-size: var(--tp-fs-base);
+  font-family: inherit;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background var(--tp-fast) var(--tp-ease),
+              border-color var(--tp-fast) var(--tp-ease),
+              color var(--tp-fast) var(--tp-ease);
+}
+.tp-btn:hover   { background: var(--tp-surface-4); color: var(--tp-text); border-color: var(--tp-line-3); }
+.tp-btn:active  { transform: translateY(1px); }
+.tp-btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+
+/* 主按钮 */
+.tp-btn--primary {
+  background: var(--tp-accent);
+  color: #00212b;
+  border-color: var(--tp-accent);
+  font-weight: 600;
+}
+.tp-btn--primary:hover { background: var(--tp-accent-2); border-color: var(--tp-accent-2); color: #00212b; }
+
+/* 危险按钮 */
+.tp-btn--danger { background: var(--tp-danger-dim); color: var(--tp-danger); border-color: #6a2a2a; }
+.tp-btn--danger:hover { background: #3a1a1a; color: #ff8a8a; border-color: #8a3a3a; }
+
+/* 幽灵按钮（侧栏列表项用，整行可点） */
+.tp-btn--ghost {
+  justify-content: flex-start;
+  background: transparent;
+  border-color: transparent;
+  color: var(--tp-text-2);
+  width: 100%;
+  text-align: left;
+  padding: 0 var(--tp-sp-3);
+}
+.tp-btn--ghost:hover { background: var(--tp-surface-3); border-color: transparent; color: var(--tp-text); }
+.tp-btn--ghost.is-active {
+  background: var(--tp-accent-dim);
+  border-color: var(--tp-accent-line);
+  color: var(--tp-accent);
+}
+
+/* 返回首页：全站统一文案与外观 */
+.tp-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 var(--tp-sp-3);
+  background: var(--tp-surface-3);
+  color: var(--tp-text-2);
+  border: 1px solid var(--tp-line-2);
+  border-radius: var(--tp-r);
+  font-size: var(--tp-fs-base);
+  font-family: inherit;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-decoration: none;
+}
+.tp-back:hover { background: var(--tp-surface-4); color: var(--tp-text); border-color: var(--tp-accent); }
+
+/* 图标按钮 */
+.tp-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tp-touch);
+  height: var(--tp-touch);
+  flex: 0 0 auto;
+  background: transparent;
+  color: var(--tp-text-2);
+  border: none;
+  border-radius: var(--tp-r);
+  font-size: 18px;
+  cursor: pointer;
+  transition: background var(--tp-fast) var(--tp-ease), color var(--tp-fast) var(--tp-ease);
+}
+.tp-icon-btn:hover { background: var(--tp-surface-3); color: var(--tp-text); }
+
+/* ============================================================================
+   表单
+   ============================================================================ */
+
+.tp-input {
+  width: 100%;
+  min-height: var(--tp-touch);
+  padding: 0 var(--tp-sp-3);
+  background: var(--tp-surface-2);
+  color: var(--tp-text);
+  border: 1px solid var(--tp-line-2);
+  border-radius: var(--tp-r);
+  font-size: var(--tp-fs-base);
+  font-family: inherit;
+  outline: none;
+}
+.tp-input::placeholder { color: var(--tp-dim-2); }
+.tp-input:focus { border-color: var(--tp-accent); background: var(--tp-surface-3); }
+
+.tp-select {
+  min-height: var(--tp-touch);
+  padding: 0 var(--tp-sp-3);
+  background: var(--tp-surface-2);
+  color: var(--tp-text);
+  border: 1px solid var(--tp-line-2);
+  border-radius: var(--tp-r);
+  font-size: var(--tp-fs-base);
+  font-family: inherit;
+  outline: none;
+}
+
+/* 复选框行 */
+.tp-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tp-sp-2);
+  min-height: 36px;
+  color: var(--tp-text-2);
+  font-size: var(--tp-fs-base);
+  cursor: pointer;
+  user-select: none;
+}
+.tp-check input { width: 18px; height: 18px; accent-color: var(--tp-accent); }
+
+/* ============================================================================
+   容器
+   ============================================================================ */
+
+.tp-card {
+  background: var(--tp-surface-2);
+  border: 1px solid var(--tp-line-2);
+  border-radius: var(--tp-r-lg);
+  padding: var(--tp-sp-5);
+}
+
+.tp-card + .tp-card { margin-top: var(--tp-sp-4); }
+
+.tp-card__title {
+  font-size: var(--tp-fs-md);
+  font-weight: 600;
+  color: var(--tp-text);
+  margin: 0 0 var(--tp-sp-3);
+  display: flex;
+  align-items: center;
+  gap: var(--tp-sp-2);
+}
+
+/* 内容区（可滚动） */
+.tp-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--tp-sp-5);
+}
+
+/* 居中窄栏（upload / mic-test 这类单栏页面） */
+.tp-narrow {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--tp-sp-6) var(--tp-sp-4);
+}
+.tp-narrow__inner { width: 720px; max-width: 100%; margin: 0 auto; }
+
+/* ============================================================================
+   播放舞台：画面区统一
+   ----------------------------------------------------------------------------
+   旧代码 player/bili/live 三个页面各写一套"画面尺寸"规则，导致同一段视频在
+   不同页面显示大小不一致。这里只留一条规则：铺满可用区域 + 等比留边。
+   注意是 contain 不是 fill —— fill 会把画面拉伸变形。
+   ============================================================================ */
+
+.tp-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tp-stage-bg);
+  overflow: hidden;
+}
+
+.tp-stage > canvas,
+.tp-stage > video,
+.tp-stage > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+/* 舞台上的浮层（加载提示 / 字幕 / 状态） */
+.tp-stage__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--tp-sp-4);
+  background: rgba(0, 0, 0, .72);
+  color: var(--tp-text-2);
+  font-size: var(--tp-fs-md);
+  text-align: center;
+  padding: var(--tp-sp-5);
+  z-index: 2;
+}
+.tp-stage__overlay[hidden] { display: none; }
+
+/* 字幕条 */
+.tp-subtitle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 72px;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 2px 8px #000, 0 0 3px #000;
+  padding: 0 var(--tp-sp-6);
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* ============================================================================
+   进度条 / 音量（播放器、音乐、B站共用）
+   ============================================================================ */
+
+.tp-progress {
+  position: relative;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+
+.tp-progress__track {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  background: var(--tp-surface-3);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.tp-progress__buffered {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 0;
+  background: #3a4652;
+}
+
+.tp-progress__fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 0;
+  background: var(--tp-accent);
+  border-radius: 3px;
+}
+
+/* 拖动手柄：放大到 18px 方便触摸 */
+.tp-progress__knob {
+  position: absolute;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--tp-shadow-sm);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.tp-time {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--tp-fs-sm);
+  color: var(--tp-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.tp-volume {
+  display: flex;
+  align-items: center;
+  gap: var(--tp-sp-2);
+  color: var(--tp-dim);
+}
+.tp-volume input[type=range] {
+  width: 96px;
+  accent-color: var(--tp-accent);
+  cursor: pointer;
+}
+
+/* ============================================================================
+   列表
+   ============================================================================ */
+
+.tp-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--tp-sp-2);
+}
+
+.tp-item {
+  background: var(--tp-surface-2);
+  border: 1px solid transparent;
+  border-radius: var(--tp-r);
+  padding: var(--tp-sp-3);
+  cursor: pointer;
+  transition: background var(--tp-fast) var(--tp-ease), border-color var(--tp-fast) var(--tp-ease);
+}
+.tp-item:hover { background: var(--tp-surface-3); }
+.tp-item.is-active {
+  background: var(--tp-accent-dim);
+  border-color: var(--tp-accent-line);
+}
+
+.tp-item__title {
+  font-size: var(--tp-fs-base);
+  color: var(--tp-text);
+  font-weight: 500;
+  word-break: break-all;
+  line-height: 1.35;
+}
+.tp-item.is-active .tp-item__title { color: var(--tp-accent); }
+
+.tp-item__meta {
+  font-size: var(--tp-fs-sm);
+  color: var(--tp-dim);
+  margin-top: 2px;
+}
+
+/* ============================================================================
+   卡片网格（B站视频 / 直播频道）
+   ============================================================================ */
+
+.tp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--tp-sp-4);
+}
+
+.tp-tile {
+  background: var(--tp-surface-2);
+  border: 1px solid var(--tp-line);
+  border-radius: var(--tp-r-lg);
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  transition: background var(--tp-fast) var(--tp-ease),
+              border-color var(--tp-fast) var(--tp-ease),
+              transform var(--tp-fast) var(--tp-ease);
+}
+.tp-tile:hover { background: var(--tp-surface-3); border-color: var(--tp-line-3); transform: translateY(-2px); }
+.tp-tile:active { transform: translateY(0); }
+
+.tp-tile__thumb {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #0a0a0a;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+.tp-tile__thumb img { width: 100%; height: 100%; object-fit: cover; }
+
+.tp-tile__badge {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 2px 6px;
+  background: rgba(0, 0, 0, .78);
+  color: #fff;
+  font-size: var(--tp-fs-xs);
+  border-radius: var(--tp-r-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.tp-tile__body {
+  padding: var(--tp-sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+}
+
+.tp-tile__title {
+  font-size: var(--tp-fs-base);
+  color: var(--tp-text);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tp-tile__meta {
+  font-size: var(--tp-fs-sm);
+  color: var(--tp-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 频道方块（直播） */
+.tp-chantile {
+  background: var(--tp-surface-2);
+  border: 1px solid var(--tp-line);
+  border-radius: var(--tp-r-lg);
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: var(--tp-sp-3);
+  text-align: center;
+  transition: background var(--tp-fast) var(--tp-ease), border-color var(--tp-fast) var(--tp-ease);
+}
+.tp-chantile:hover { background: var(--tp-surface-3); border-color: var(--tp-accent-line); }
+.tp-chantile__num { font-size: 26px; font-weight: 700; color: var(--tp-accent); line-height: 1; }
+.tp-chantile__name { font-size: var(--tp-fs-base); color: var(--tp-text-2); }
+
+/* 分组标题 */
+.tp-group-title {
+  font-size: var(--tp-fs-md);
+  font-weight: 600;
+  color: var(--tp-text);
+  margin: var(--tp-sp-5) 0 var(--tp-sp-3);
+  padding-left: var(--tp-sp-3);
+  border-left: 3px solid var(--tp-accent);
+  line-height: 1.2;
+}
+.tp-group-title:first-child { margin-top: 0; }
+
+/* ============================================================================
+   状态 / 提示
+   ============================================================================ */
+
+.tp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--tp-r-pill);
+  background: var(--tp-surface-3);
+  color: var(--tp-dim);
+  font-size: var(--tp-fs-sm);
+  white-space: nowrap;
+}
+.tp-chip--ok     { color: var(--tp-ok);     background: rgba(74, 222, 128, .12); }
+.tp-chip--warn   { color: var(--tp-warn);   background: rgba(255, 180, 84, .12); }
+.tp-chip--danger { color: var(--tp-danger); background: var(--tp-danger-dim); }
+.tp-chip--accent { color: var(--tp-accent); background: var(--tp-accent-dim); }
+
+.tp-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--tp-sp-3);
+  padding: var(--tp-sp-8) var(--tp-sp-5);
+  color: var(--tp-dim);
+  font-size: var(--tp-fs-base);
+  text-align: center;
+}
+
+.tp-error {
+  color: var(--tp-danger);
+  font-size: var(--tp-fs-base);
+  padding: var(--tp-sp-3);
+  background: var(--tp-danger-dim);
+  border-radius: var(--tp-r);
+  border: 1px solid #5a2a2a;
+}
+
+/* 旋转指示 */
+.tp-spin {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  border: 3px solid var(--tp-line-2);
+  border-top-color: var(--tp-accent);
+  border-radius: 50%;
+  animation: tp-spin .8s linear infinite;
+  flex: 0 0 auto;
+}
+@keyframes tp-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .tp-spin { animation-duration: 2.4s; }
+}
+
+/* ============================================================================
+   浮层：模态 / 播放器覆盖层
+   ============================================================================ */
+
+.tp-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--tp-z-overlay);
+  background: #000;
+  display: flex;
+  flex-direction: column;
+}
+.tp-overlay[hidden] { display: none; }
+
+.tp-modal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--tp-z-modal);
+  background: rgba(0, 0, 0, .82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--tp-sp-5);
+}
+.tp-modal[hidden] { display: none; }
+
+.tp-modal__box {
+  background: var(--tp-surface);
+  border: 1px solid var(--tp-line-2);
+  border-radius: var(--tp-r-lg);
+  padding: var(--tp-sp-6);
+  box-shadow: var(--tp-shadow);
+  max-width: 440px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--tp-sp-4);
+  align-items: center;
+  text-align: center;
+}
+
+/* 伪全屏：QtWebEngine 的 Fullscreen API 不可靠，用 CSS 类兜底 */
+.tp-app.is-fs .tp-sidebar,
+.tp-app.is-fs .tp-topbar { display: none; }
+.tp-app.is-fs .tp-main { position: fixed; inset: 0; z-index: var(--tp-z-overlay); }
+
+/* ============================================================================
+   通知
+   ============================================================================ */
+
+#tpToasts {
+  position: fixed;
+  left: 50%;
+  bottom: 72px;
+  transform: translateX(-50%);
+  z-index: var(--tp-z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--tp-sp-2);
+  align-items: center;
+  pointer-events: none;
+  max-width: 80vw;
+}
+
+.tp-toast {
+  background: rgba(20, 24, 30, .96);
+  border: 1px solid var(--tp-line-2);
+  color: var(--tp-text);
+  padding: 10px 18px;
+  border-radius: var(--tp-r-pill);
+  font-size: var(--tp-fs-base);
+  box-shadow: var(--tp-shadow);
+  animation: tp-toast-in var(--tp-med) var(--tp-ease);
+  max-width: 100%;
+}
+.tp-toast--ok     { border-color: #2f6a45; color: var(--tp-ok); }
+.tp-toast--danger { border-color: #6a2f2f; color: var(--tp-danger); }
+.tp-toast--warn   { border-color: #6a5a2f; color: var(--tp-warn); }
+
+@keyframes tp-toast-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================================================
+   HUD：版本角标 / 缩放胶囊
+   ============================================================================ */
+
+#tpVerBadge {
+  position: fixed;
+  right: 8px;
+  bottom: 4px;
+  font-size: 10px;
+  color: var(--tp-dim-2);
+  z-index: var(--tp-z-hud);
+  pointer-events: none;
+  opacity: .75;
+}
+
+#tpZoomPill {
+  position: fixed;
+  left: 8px;
+  bottom: 6px;
+  z-index: var(--tp-z-hud);
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  background: rgba(10, 14, 18, .7);
+  border: 1px solid #2a3a44;
+  border-radius: var(--tp-r-pill);
+  padding: 2px 4px;
+  opacity: .5;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: opacity var(--tp-fast) var(--tp-ease);
+}
+#tpZoomPill:hover { opacity: 1; }
+#tpZoomPill button {
+  all: unset;
+  cursor: pointer;
+  padding: 2px 7px;
+  border-radius: 9px;
+  color: #cfe9f2;
+  font-size: 13px;
+  line-height: 1;
+  min-width: 18px;
+  text-align: center;
+  touch-action: manipulation;
+}
+#tpZoomPill .tp-zoom-val { color: var(--tp-accent); min-width: 42px; }
+
+/* ============================================================================
+   日志面板（诊断用，默认隐藏）
+   ============================================================================ */
+
+.tp-logpanel {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 460px;
+  max-width: 92vw;
+  background: rgba(8, 10, 13, .97);
+  border-left: 1px solid var(--tp-line-2);
+  z-index: var(--tp-z-hud);
+  display: flex;
+  flex-direction: column;
+  font-size: var(--tp-fs-sm);
+}
+.tp-logpanel[hidden] { display: none; }
+
+.tp-logpanel__head {
+  display: flex;
+  align-items: center;
+  gap: var(--tp-sp-2);
+  padding: var(--tp-sp-2) var(--tp-sp-3);
+  border-bottom: 1px solid var(--tp-line-2);
+  flex: 0 0 auto;
+}
+.tp-logpanel__body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--tp-sp-2) var(--tp-sp-3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--tp-text-2);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.tp-logpanel__body .l-warn { color: var(--tp-warn); }
+.tp-logpanel__body .l-err  { color: var(--tp-danger); }
+.tp-logpanel__body .l-ok   { color: var(--tp-ok); }
+
+/* ============================================================================
+   操作区对齐
+   ----------------------------------------------------------------------------
+   司机在左侧，右侧的控件伸手够不到 —— 所以**所有可点控件一律靠左**，
+   不要居中、也不要用 spacer 推到右边。
+   新增控制条时直接用 .tp-ctl，不要自己写 justify-content。
+   ============================================================================ */
+
+.tp-ctl {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;   /* 靠左，不是 center / flex-end */
+  gap: var(--tp-sp-3);
+  flex-wrap: wrap;
+}
+
+/* 次要控件（音画校准、字幕、音量）紧跟在主控件后面，同样靠左 */
+.tp-ctl--tight { gap: var(--tp-sp-2); }
+
+
+
+.tp-row     { display: flex; align-items: center; gap: var(--tp-sp-2); }
+.tp-col     { display: flex; flex-direction: column; gap: var(--tp-sp-2); }
+.tp-grow    { flex: 1 1 auto; min-width: 0; }
+.tp-dim     { color: var(--tp-dim); }
+.tp-sm      { font-size: var(--tp-fs-sm); }
+.tp-xs      { font-size: var(--tp-fs-xs); }
+.tp-center  { text-align: center; }
+.tp-hidden  { display: none !important; }
+.tp-nowrap  { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tp-tnum    { font-variant-numeric: tabular-nums; }
+
+/* ============================================================================
+   布局档位：左右 / 上下
+   ----------------------------------------------------------------------------
+   为什么不用纯媒体查询
+     车机屏是 1254×784（横屏），但浏览器放大渲染导致 CSS 视口只有 773×601，
+     再叠加 zoom 补偿 0.65。**CSS zoom 不影响媒体查询** —— 媒体查询永远看到
+     773px，于是 max-width:860px 被误判为窄屏，把左右结构折成上下结构。
+     而车机实际可用宽度 = 773 / 0.65 ≈ 1189px，完全放得下左右布局。
+
+   做法
+     viewport.js 按「等效宽度 = innerWidth / zoom」写入 <html data-tp-layout>：
+       wide  → 左右结构（车机、宽屏桌面）
+       stack → 上下结构（真正的窄窗口）
+     下面的媒体查询仅作**兜底**（JS 未执行时），属性选择器优先级更高、会覆盖它。
+   ============================================================================ */
+
+/* 兜底：JS 未执行且窗口确实很窄时 */
+@media (max-width: 860px) {
+  html:not([data-tp-layout]) .tp-app { flex-direction: column; }
+  html:not([data-tp-layout]) .tp-sidebar {
+    width: 100%;
+    flex: 0 0 38%;
+    max-height: 38%;
+    border-right: none;
+    border-bottom: 1px solid var(--tp-line);
+  }
+}
+
+/* ── 强制左右（车机等效宽度足够时）───────────────────────────────────────── */
+html[data-tp-layout="wide"] .tp-app { flex-direction: row; }
+html[data-tp-layout="wide"] .tp-app--col { flex-direction: column; }   /* 顶栏式骨架本就竖排 */
+html[data-tp-layout="wide"] .tp-sidebar {
+  width: var(--tp-side);
+  flex: 0 0 var(--tp-side);
+  max-height: none;
+  border-right: 1px solid var(--tp-line);
+  border-bottom: none;
+}
+html[data-tp-layout="wide"] .tp-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+html[data-tp-layout="wide"] .tp-narrow { padding: var(--tp-sp-6) var(--tp-sp-4); }
+
+/* ── 强制上下（真正的窄窗口）─────────────────────────────────────────────── */
+html[data-tp-layout="stack"] .tp-app { flex-direction: column; }
+html[data-tp-layout="stack"] .tp-sidebar {
+  width: 100%;
+  flex: 0 0 38%;
+  max-height: 38%;
+  border-right: none;
+  border-bottom: 1px solid var(--tp-line);
+}
+html[data-tp-layout="stack"] .tp-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+html[data-tp-layout="stack"] .tp-narrow { padding: var(--tp-sp-4) var(--tp-sp-3); }

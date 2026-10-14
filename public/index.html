@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<title>Tesla 车机娱乐系统</title>
+
+<!-- 设计令牌 + 组件库：全站唯一来源，页面不再自带一套样式 -->
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/app.css">
+
+<!-- 视口补偿必须在首屏前同步执行，否则页面会先按错误比例闪一下 -->
+<script src="/js/core/viewport.js"></script>
+
+<style>
+  /* 首页特有的样式：其余全部来自 app.css */
+  /* 整体靠左：司机在左侧，居中的卡片右侧够不到 */
+  .home {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: var(--tp-sp-6);
+    padding: var(--tp-sp-8) var(--tp-sp-6);
+    overflow-y: auto;
+  }
+
+  .home__brand {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--tp-sp-2);
+  }
+
+  .home__title {
+    font-size: var(--tp-fs-2xl);
+    font-weight: 700;
+    color: var(--tp-accent);
+    margin: 0;
+    letter-spacing: .01em;
+  }
+
+  .home__sub {
+    font-size: var(--tp-fs-base);
+    color: var(--tp-dim);
+    margin: 0;
+  }
+
+  /* 入口卡片：2 列网格，车机横屏下每格足够大，好点 */
+  .home__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(240px, 320px));
+    gap: var(--tp-sp-4);
+    width: 100%;
+    max-width: 700px;
+    justify-content: start;   /* 靠左 */
+  }
+
+  .entry {
+    display: flex;
+    align-items: center;
+    gap: var(--tp-sp-4);
+    padding: var(--tp-sp-5);
+    background: var(--tp-surface-2);
+    border: 1px solid var(--tp-line-2);
+    border-radius: var(--tp-r-lg);
+    color: var(--tp-text);
+    text-decoration: none;
+    transition: background var(--tp-fast) var(--tp-ease),
+                border-color var(--tp-fast) var(--tp-ease),
+                transform var(--tp-fast) var(--tp-ease);
+  }
+  .entry:hover {
+    background: var(--tp-surface-3);
+    border-color: var(--tp-accent-line);
+    transform: translateY(-2px);
+    color: var(--tp-text);
+  }
+  .entry:active { transform: translateY(0); }
+
+  .entry__icon {
+    font-size: 30px;
+    line-height: 1;
+    flex: 0 0 auto;
+    width: 46px;
+    text-align: center;
+  }
+
+  .entry__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+  .home__title, .home__sub { text-align: left; }
+
+  .entry__name {
+    font-size: var(--tp-fs-lg);
+    font-weight: 600;
+    color: var(--tp-text);
+  }
+
+  .entry__desc {
+    font-size: var(--tp-fs-sm);
+    color: var(--tp-dim);
+  }
+
+  .home__foot {
+    display: flex;
+    align-items: center;
+    gap: var(--tp-sp-3);
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  /* 首页入口网格：同样按"补偿后的等效宽度"决定列数，不用裸媒体查询
+     （原因见 css/app.css 布局档位一节：车机 CSS 视口 773px，实际等效 1189px） */
+  @media (max-width: 700px) {
+    html:not([data-tp-layout]) .home__grid { grid-template-columns: 1fr; max-width: 420px; }
+    html:not([data-tp-layout]) .home__title { font-size: var(--tp-fs-xl); }
+  }
+  html[data-tp-layout="wide"] .home__grid { grid-template-columns: repeat(2, minmax(240px, 320px)); max-width: 700px; }
+  html[data-tp-layout="wide"] .home__title { font-size: var(--tp-fs-2xl); }
+  html[data-tp-layout="stack"] .home__grid { grid-template-columns: 1fr; max-width: 420px; }
+  html[data-tp-layout="stack"] .home__title { font-size: var(--tp-fs-xl); }
+</style>
+</head>
+<body>
+
+<main class="home">
+  <div class="home__brand">
+    <h1 class="home__title">Tesla 车机娱乐系统</h1>
+    <p class="home__sub" id="sub">D 档可播放 · Canvas 渲染</p>
+  </div>
+
+  <nav class="home__grid" id="entries" aria-label="功能入口"></nav>
+
+  <div class="home__foot">
+    <button class="tp-btn" id="diagBtn" title="显示诊断信息">诊断信息</button>
+    <a class="tp-btn" href="/upload.html">大文件上传</a>
+  </div>
+</main>
+
+<script type="module">
+import { el, replace, fmtSize } from '/js/core/dom.js';
+import { startReporting, bindPanel, log } from '/js/core/log.js';
+import { getJSON, showVersionBadge } from '/js/core/api.js';
+import { toast, toastDanger } from '/js/core/toast.js';
+
+/* ── 入口定义：单一数据源，改这里就够 ─────────────────────────────────── */
+const ENTRIES = [
+  { href: '/player.html', icon: '🎬', name: '视频播放器',
+    desc: '本地视频 · Canvas 渲染 · 字幕' },
+  { href: '/bili.html',   icon: '📺', name: 'B站视频',
+    desc: '搜索 · 热门 · 关注 · 收藏' },
+  { href: '/youtube.html', icon: '▶️', name: 'YouTube',
+    desc: '搜索 · 热门 · 分类 · 在线播放' },
+  { href: '/music.html',  icon: '🎵', name: '音乐播放器',
+    desc: '音乐库 · 歌词同步 · 方向盘可控' },
+  { href: '/live.html',   icon: '📡', name: '电视直播',
+    desc: '央视 · 卫视 · 自动选源' },
+];
+
+replace(document.getElementById('entries'), ENTRIES.map((e) =>
+  el('a', { class: 'entry', href: e.href }, [
+    el('span', { class: 'entry__icon', text: e.icon }),
+    el('span', { class: 'entry__text' }, [
+      el('span', { class: 'entry__name', text: e.name }),
+      el('span', { class: 'entry__desc', text: e.desc }),
+    ]),
+  ])
+));
+
+/* ── 启动遥测与调试面板 ───────────────────────────────────────────────── */
+startReporting();
+bindPanel();
+
+/* ── 诊断信息：把"这台车机看到了什么"直接摆出来 ────────────────────────
+   重写前这些信息只藏在 debug.log 里，用户反馈"显示被放大"时无从确认。
+   现在点一下就能看到，也方便远程问用户。                                 */
+document.getElementById('diagBtn').addEventListener('click', async () => {
+  const vv = window.visualViewport;
+  const lines = [
+    `视口        ${window.innerWidth}×${window.innerHeight}`,
+    `物理屏      ${screen.width}×${screen.height}`,
+    `dpr         ${window.devicePixelRatio}`,
+    `缩放补偿    ${window.__tpUiScale ?? 1}  (${window.__tpUiScaleWhy || '-'})`,
+    `可视视口    ${vv ? `${Math.round(vv.width)}×${Math.round(vv.height)} @${vv.scale}` : '不支持'}`,
+    `UA          ${navigator.userAgent}`,
+  ];
+  try {
+    const v = await getJSON('/api/version', { timeout: 5000 });
+    lines.push(`服务端版本  ${v.version || '-'}`);
+  } catch { lines.push('服务端版本  获取失败'); }
+
+  alert(lines.join('\n'));
+  log('home-diag', lines.join(' | '));
+});
+
+/* ── 服务状态轻提示（不阻塞，失败也不吵） ─────────────────────────────── */
+(async () => {
+  try {
+    const vids = await getJSON('/api/videos', { timeout: 8000 });
+    if (Array.isArray(vids) && vids.length) {
+      const total = vids.reduce((s, v) => s + (v.size || 0), 0);
+      document.getElementById('sub').textContent =
+        `${vids.length} 个视频 · ${fmtSize(total)} · D 档可播放`;
+    }
+  } catch {
+    document.getElementById('sub').textContent = '无法连接服务端';
+  }
+})();
+
+showVersionBadge();
+</script>
+</body>
+</html>

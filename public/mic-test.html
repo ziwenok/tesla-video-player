@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<title>麦克风测试 · Tesla</title>
+
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/app.css">
+<script src="/js/core/viewport.js"></script>
+
+<style>
+  .m-head { display: flex; align-items: center; gap: var(--tp-sp-3); margin-bottom: var(--tp-sp-5); }
+  .m-head h1 { font-size: var(--tp-fs-xl); font-weight: 700; color: var(--tp-text); margin: 0; }
+
+  .kv { display: flex; justify-content: space-between; gap: var(--tp-sp-4); padding: 6px 0; border-bottom: 1px solid var(--tp-line); font-size: var(--tp-fs-base); }
+  .kv:last-child { border-bottom: none; }
+  .kv__k { color: var(--tp-dim); flex: 0 0 auto; }
+  .kv__v { color: var(--tp-text-2); text-align: right; word-break: break-all; }
+
+  #visualizer { width: 100%; height: 120px; background: var(--tp-surface-3); border-radius: var(--tp-r); display: block; }
+
+  .level-row { display: flex; align-items: center; gap: var(--tp-sp-3); margin-top: var(--tp-sp-3); }
+  .level-bar { flex: 1 1 auto; height: 10px; background: var(--tp-surface-3); border-radius: 5px; overflow: hidden; }
+  .level-bar__fill { height: 100%; width: 0; background: var(--tp-ok); border-radius: 5px; }
+
+  .log-box {
+    max-height: 300px;
+    overflow-y: auto;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--tp-text-2);
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+</style>
+</head>
+<body>
+
+<main class="tp-narrow">
+  <div class="tp-narrow__inner">
+
+    <div class="m-head">
+      <a class="tp-back" href="/">← 返回首页</a>
+      <h1>麦克风测试</h1>
+    </div>
+
+    <div class="tp-card">
+      <div class="tp-card__title">权限测试</div>
+      <div class="tp-sm tp-dim" style="margin-bottom: var(--tp-sp-4)">
+        用于验证车机浏览器是否开放麦克风权限（后续做语音对话的前提）。
+      </div>
+      <div class="tp-ctl">
+        <button class="tp-btn tp-btn--primary" id="startBtn">开始测试</button>
+        <button class="tp-btn" id="stopBtn" disabled>停止</button>
+        <span class="tp-chip" id="permChip" hidden></span>
+      </div>
+    </div>
+
+    <div class="tp-card" id="devCard" hidden>
+      <div class="tp-card__title">设备信息</div>
+      <div id="devList"></div>
+    </div>
+
+    <div class="tp-card" id="visCard" hidden>
+      <div class="tp-card__title">音频可视化</div>
+      <canvas id="visualizer" width="760" height="120"></canvas>
+      <div class="level-row">
+        <span class="tp-sm tp-dim">输入电平</span>
+        <div class="level-bar"><div class="level-bar__fill" id="levelFill"></div></div>
+        <span class="tp-sm tp-tnum" id="levelText">0%</span>
+      </div>
+    </div>
+
+    <div class="tp-card">
+      <div class="tp-card__title">日志</div>
+      <div class="log-box" id="logBox"></div>
+    </div>
+
+  </div>
+</main>
+
+<script type="module">
+import { el, replace, $ } from '/js/core/dom.js';
+import { startReporting, bindPanel, log as tplog } from '/js/core/log.js';
+import { postJSON, showVersionBadge } from '/js/core/api.js';
+import { toastOk } from '/js/core/toast.js';
+
+/* ============================================================================
+   说明
+   ----------------------------------------------------------------------------
+   重写前这个页面每写一行日志就发一个 HTTP POST（一次会话几百个请求）。
+   现在攒在内存里批量上报：每 3 秒或满 20 条发一次，卸载时 sendBeacon 兜底。
+   ============================================================================ */
+
+const S = {
+  sessionId: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+  stream: null,
+  ctx: null,
+  analyser: null,
+  rafId: 0,
+  buf: [],
+  flushTimer: 0,
+  peak: 0,
+  detected: false,
+};
+
+const logBox = $('#logBox');
+
+function log(msg, kind = '') {
+  const t = new Date().toTimeString().slice(0, 8);
+  const line = el('div', { text: `${t}  ${msg}` });
+  if (kind === 'err') line.style.color = 'var(--tp-danger)';
+  else if (kind === 'ok') line.style.color = 'var(--tp-ok)';
+  logBox.append(line);
+  logBox.scrollTop = logBox.scrollHeight;
+
+  S.buf.push({ t: Date.now(), msg, level: S.peak });
+  if (S.buf.length >= 20) flush();
+}
+
+/** 批量上报（失败不影响页面）。 */
+async function flush(reason = 'batch') {
+  if (!S.buf.length) return;
+  const batch = S.buf.splice(0, S.buf.length);
+  try {
+    await postJSON('/api/mic-log', {
+      sessionId: S.sessionId,
+      ua: navigator.userAgent,
+      url: location.href,
+      reason,
+      entries: batch,
+    }, { timeout: 8000 });
+  } catch {
+    // 上报失败就把数据放回去，下次再试（但别无限增长）
+    if (S.buf.length < 200) S.buf.unshift(...batch);
+  }
+}
+
+S.flushTimer = setInterval(() => flush('timer'), 3000);
+window.addEventListener('pagehide', () => {
+  if (!S.buf.length) return;
+  try {
+    navigator.sendBeacon('/api/mic-log', new Blob([JSON.stringify({
+      sessionId: S.sessionId, ua: navigator.userAgent, url: location.href,
+      reason: 'pagehide', entries: S.buf,
+    })], { type: 'application/json' }));
+  } catch {}
+});
+
+function setChip(text, cls) {
+  const c = $('#permChip');
+  c.textContent = text;
+  c.hidden = !text;
+  c.className = 'tp-chip' + (cls ? ' ' + cls : '');
+}
+
+/* ============================================================================
+   测试流程
+   ============================================================================ */
+
+$('#startBtn').addEventListener('click', startTest);
+$('#stopBtn').addEventListener('click', stopTest);
+
+async function startTest() {
+  $('#startBtn').disabled = true;
+  logBox.textContent = '';
+  S.peak = 0;
+  S.detected = false;
+
+  log(`会话 ${S.sessionId}`);
+  log(`UA: ${navigator.userAgent}`);
+  log(`isSecureContext: ${window.isSecureContext}`);
+  log(`mediaDevices: ${!!navigator.mediaDevices}`);
+  log(`getUserMedia: ${!!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)}`);
+
+  if (!window.isSecureContext) {
+    log('不是安全上下文（需要 https 或 localhost），浏览器会拒绝麦克风', 'err');
+    setChip('非安全上下文', 'tp-chip--danger');
+    $('#startBtn').disabled = false;
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    log('浏览器不支持 getUserMedia', 'err');
+    setChip('不支持', 'tp-chip--danger');
+    $('#startBtn').disabled = false;
+    return;
+  }
+
+  try {
+    log('正在请求麦克风权限…');
+    S.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    log('✓ 已获得麦克风权限', 'ok');
+    setChip('权限已授予', 'tp-chip--ok');
+    $('#stopBtn').disabled = false;
+
+    await showDevices();
+    startVisualizer();
+  } catch (e) {
+    const map = {
+      NotAllowedError: '权限被拒绝（车机浏览器可能未开放麦克风）',
+      NotFoundError: '没有找到麦克风设备',
+      NotReadableError: '设备被占用或硬件错误',
+      OverconstrainedError: '约束条件无法满足',
+      SecurityError: '安全策略阻止（需要 https）',
+    };
+    const msg = map[e.name] || `${e.name}: ${e.message}`;
+    log('✗ ' + msg, 'err');
+    setChip('失败', 'tp-chip--danger');
+    $('#startBtn').disabled = false;
+  }
+}
+
+async function showDevices() {
+  $('#devCard').hidden = false;
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputs = devices.filter((d) => d.kind === 'audioinput');
+    const outputs = devices.filter((d) => d.kind === 'audiooutput');
+    const track = S.stream.getAudioTracks()[0];
+    const st = track ? track.getSettings() : {};
+
+    replace($('#devList'), [
+      kv('音频输入设备', `${inputs.length} 个`),
+      kv('音频输出设备', `${outputs.length} 个`),
+      ...inputs.map((d, i) => kv(`输入 ${i + 1}`, d.label || '(未授权时无名称)')),
+      kv('采样率', st.sampleRate ? st.sampleRate + ' Hz' : '—'),
+      kv('声道数', st.channelCount ?? '—'),
+      kv('回声消除', st.echoCancellation ? '开' : '关'),
+      kv('噪声抑制', st.noiseSuppression ? '开' : '关'),
+      kv('自动增益', st.autoGainControl ? '开' : '关'),
+    ]);
+    log(`设备：${inputs.length} 输入 / ${outputs.length} 输出`);
+    log(`采样率 ${st.sampleRate || '?'} Hz，声道 ${st.channelCount ?? '?'}`);
+  } catch (e) {
+    log('设备枚举失败：' + e.message, 'err');
+  }
+}
+
+function kv(k, v) {
+  return el('div', { class: 'kv' }, [
+    el('span', { class: 'kv__k', text: k }),
+    el('span', { class: 'kv__v', text: String(v) }),
+  ]);
+}
+
+function startVisualizer() {
+  $('#visCard').hidden = false;
+  const canvas = $('#visualizer');
+
+  S.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const src = S.ctx.createMediaStreamSource(S.stream);
+  S.analyser = S.ctx.createAnalyser();
+  S.analyser.fftSize = 256;
+  src.connect(S.analyser);
+
+  const data = new Uint8Array(S.analyser.frequencyBinCount);
+  const ctx2d = canvas.getContext('2d');
+
+  const draw = () => {
+    S.rafId = requestAnimationFrame(draw);
+    S.analyser.getByteFrequencyData(data);
+
+    const w = canvas.width, h = canvas.height;
+    ctx2d.clearRect(0, 0, w, h);
+
+    const bars = 48;
+    const step = Math.floor(data.length / bars);
+    let sum = 0;
+    for (let i = 0; i < bars; i++) {
+      let v = 0;
+      for (let j = 0; j < step; j++) v = Math.max(v, data[i * step + j]);
+      sum += v;
+      const bh = (v / 255) * h;
+      ctx2d.fillStyle = v > 180 ? '#4ade80' : v > 80 ? '#00d4ff' : '#2f6a86';
+      const bw = w / bars - 3;
+      ctx2d.fillRect(i * (w / bars), h - bh, bw, bh);
+    }
+
+    const avg = sum / bars;
+    const pct = Math.round((avg / 255) * 100);
+    S.peak = Math.max(S.peak, pct);
+    $('#levelFill').style.width = pct + '%';
+    $('#levelText').textContent = pct + '%';
+
+    if (!S.detected && S.peak > 5) {
+      S.detected = true;
+      log('✓ 检测到音频输入！', 'ok');
+      toastOk('检测到音频输入');
+    }
+  };
+  draw();
+
+  log('可视化已启动（对着麦克风说话看电平变化）');
+}
+
+function stopTest() {
+  if (S.rafId) cancelAnimationFrame(S.rafId);
+  S.rafId = 0;
+  if (S.stream) { S.stream.getTracks().forEach((t) => t.stop()); S.stream = null; }
+  if (S.ctx) { try { S.ctx.close(); } catch {} S.ctx = null; }
+  S.analyser = null;
+  $('#startBtn').disabled = false;
+  $('#stopBtn').disabled = true;
+  setChip('已停止', '');
+  log('已停止测试');
+  flush('stop');
+}
+
+/* ============================================================================
+   启动
+   ============================================================================ */
+
+startReporting();
+bindPanel();
+showVersionBadge();
+log('页面就绪，点击「开始测试」');
+</script>
+</body>
+</html>

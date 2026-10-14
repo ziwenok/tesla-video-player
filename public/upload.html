@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<title>大文件上传 · Tesla</title>
+
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/app.css">
+<script src="/js/core/viewport.js"></script>
+
+<style>
+  /* 上传页是单栏窄版布局，与其它页共用 tokens/app.css */
+  .up-head {
+    display: flex;
+    align-items: center;
+    gap: var(--tp-sp-3);
+    margin-bottom: var(--tp-sp-5);
+  }
+  .up-head h1 {
+    font-size: var(--tp-fs-xl);
+    font-weight: 700;
+    color: var(--tp-text);
+    margin: 0;
+  }
+
+  .drop {
+    border: 2px dashed var(--tp-line-2);
+    border-radius: var(--tp-r-lg);
+    padding: var(--tp-sp-8) var(--tp-sp-5);
+    text-align: center;
+    color: var(--tp-dim);
+    cursor: pointer;
+    transition: border-color var(--tp-fast) var(--tp-ease), background var(--tp-fast) var(--tp-ease);
+  }
+  .drop:hover, .drop.is-over {
+    border-color: var(--tp-accent);
+    background: var(--tp-accent-dim);
+    color: var(--tp-text-2);
+  }
+  .drop__icon { font-size: 40px; margin-bottom: var(--tp-sp-2); }
+  .drop__name { font-size: var(--tp-fs-md); color: var(--tp-text); margin-top: var(--tp-sp-2); word-break: break-all; }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field > label { font-size: var(--tp-fs-sm); color: var(--tp-dim); }
+
+  .bar {
+    height: 10px;
+    background: var(--tp-surface-3);
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .bar__fill {
+    height: 100%;
+    width: 0;
+    background: var(--tp-accent);
+    border-radius: 5px;
+    transition: width var(--tp-med) var(--tp-ease);
+  }
+
+  .progress-box { display: flex; flex-direction: column; gap: 6px; }
+  .progress-box__text { display: flex; justify-content: space-between; font-size: var(--tp-fs-sm); color: var(--tp-dim); }
+</style>
+</head>
+<body>
+
+<main class="tp-narrow">
+  <div class="tp-narrow__inner">
+
+    <div class="up-head">
+      <a class="tp-back" href="/">← 返回首页</a>
+      <h1>大文件上传</h1>
+    </div>
+
+    <div class="tp-card">
+      <div class="field" style="margin-bottom: var(--tp-sp-4);">
+        <label for="keyInput">上传密钥</label>
+        <input class="tp-input" id="keyInput" type="password" placeholder="服务器配置的上传密钥" autocomplete="off">
+      </div>
+
+      <div class="drop" id="drop">
+        <div class="drop__icon">📁</div>
+        <div>点击选择文件，或把文件拖到这里</div>
+        <div class="tp-sm" style="margin-top:8px">支持超大文件，按 16 MB 分块上传，中断后可续传</div>
+        <div class="drop__name" id="fileName" hidden></div>
+      </div>
+      <input type="file" id="fileInput" hidden>
+
+      <div class="tp-row" style="margin-top: var(--tp-sp-4); flex-wrap: wrap; gap: var(--tp-sp-3);">
+        <div class="field" style="flex:1 1 200px;">
+          <label for="destSelect">保存到</label>
+          <select class="tp-select" id="destSelect">
+            <option value="videos">videos（视频目录）</option>
+            <option value="music">music（音乐目录）</option>
+            <option value="subtitles">subtitles（字幕目录）</option>
+          </select>
+        </div>
+        <label class="tp-check" style="align-self:flex-end;">
+          <input type="checkbox" id="overwrite"> 覆盖同名文件
+        </label>
+      </div>
+
+      <div class="tp-ctl" style="margin-top: var(--tp-sp-5);">
+        <button class="tp-btn tp-btn--primary" id="startBtn" disabled>开始上传</button>
+        <button class="tp-btn" id="stopBtn" disabled>停止</button>
+        <span class="tp-sm tp-dim" id="hint"></span>
+      </div>
+    </div>
+
+    <div class="tp-card" id="progressCard" hidden>
+      <div class="progress-box">
+        <div class="bar"><div class="bar__fill" id="barFill"></div></div>
+        <div class="progress-box__text">
+          <span id="pText">0%</span>
+          <span id="pDetail"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tp-card" id="resultCard" hidden>
+      <div id="resultText"></div>
+    </div>
+
+  </div>
+</main>
+
+<script type="module">
+import { el, replace, fmtSize, $ } from '/js/core/dom.js';
+import { startReporting, bindPanel, log } from '/js/core/log.js';
+import { showVersionBadge } from '/js/core/api.js';
+import { toast, toastOk, toastDanger } from '/js/core/toast.js';
+
+/* ============================================================================
+   说明
+   ----------------------------------------------------------------------------
+   上传 API 在**独立的上传服务**（默认 3001），本页面由视频服务提供。
+   两者不同源，直接跨域 fetch 会被浏览器拒绝（3001 不返回 CORS 头），
+   前端只能看到 "Failed to fetch"；HTTPS 下还会被当混合内容拦掉。
+
+   因此统一走**同源相对路径** /api/upload/*，由视频服务反向代理到 3001。
+   这样 http/https、内网/公网三种访问方式都能工作。
+   ============================================================================ */
+
+const API_BASE = '';   // 同源：由视频服务代理到上传服务
+
+const KEY_LS = 'tp_upload_key';
+const SESSION_LS = 'tp_upload_session';
+
+const S = {
+  file: null,
+  key: localStorage.getItem(KEY_LS) || '',
+  running: false,
+  cancelled: false,
+  xhr: null,
+  speeds: [],
+};
+
+/* ============================================================================
+   工具
+   ============================================================================ */
+
+function api(path, opts = {}) {
+  const url = API_BASE + path + (path.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(S.key);
+  return fetch(url, opts).then(async (res) => {
+    if (res.status === 401) throw new Error('密钥错误');
+    const text = await res.text();
+    let body = null;
+    try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+    if (!res.ok) throw new Error((body && body.error) || `HTTP ${res.status}`);
+    return body;
+  });
+}
+
+function fmtEta(sec) {
+  if (!Number.isFinite(sec) || sec <= 0) return '—';
+  if (sec < 60) return Math.ceil(sec) + ' 秒';
+  if (sec < 3600) return Math.ceil(sec / 60) + ' 分';
+  return (sec / 3600).toFixed(1) + ' 小时';
+}
+
+function addSpeed(bytes) {
+  const now = Date.now();
+  S.speeds.push({ t: now, b: bytes });
+  S.speeds = S.speeds.filter((s) => now - s.t < 2000);
+}
+
+function currentSpeed() {
+  if (S.speeds.length < 2) return 0;
+  const first = S.speeds[0], last = S.speeds[S.speeds.length - 1];
+  const dt = (last.t - first.t) / 1000;
+  if (dt <= 0) return 0;
+  return (last.b - first.b) / dt;
+}
+
+/* ============================================================================
+   文件选择
+   ============================================================================ */
+
+const drop = $('#drop');
+const fileInput = $('#fileInput');
+
+drop.addEventListener('click', () => fileInput.click());
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files && fileInput.files[0]) setFile(fileInput.files[0]);
+});
+
+['dragenter', 'dragover'].forEach((ev) =>
+  drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('is-over'); })
+);
+['dragleave', 'drop'].forEach((ev) =>
+  drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('is-over'); })
+);
+drop.addEventListener('drop', (e) => {
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f) setFile(f);
+});
+
+function setFile(f) {
+  S.file = f;
+  const nameEl = $('#fileName');
+  nameEl.textContent = `${f.name} · ${fmtSize(f.size)}`;
+  nameEl.hidden = false;
+  $('#startBtn').disabled = false;
+  $('#hint').textContent = '';
+  log('upload-file', { name: f.name, size: f.size });
+}
+
+/* ============================================================================
+   上传
+   ============================================================================ */
+
+$('#keyInput').value = S.key;
+$('#keyInput').addEventListener('change', (e) => {
+  S.key = e.target.value.trim();
+  try { localStorage.setItem(KEY_LS, S.key); } catch {}
+});
+
+$('#startBtn').addEventListener('click', () => runUpload());
+$('#stopBtn').addEventListener('click', () => {
+  S.cancelled = true;
+  if (S.xhr) { try { S.xhr.abort(); } catch {} }
+  $('#stopBtn').disabled = true;
+  $('#hint').textContent = '正在停止…';
+});
+
+function paintProgress(pct, detail) {
+  $('#progressCard').hidden = false;
+  $('#barFill').style.width = pct + '%';
+  $('#pText').textContent = pct.toFixed(1) + '%';
+  $('#pDetail').textContent = detail || '';
+}
+
+async function runUpload() {
+  if (!S.file) return;
+  if (!S.key) { toastDanger('请先填写上传密钥'); return; }
+
+  S.running = true;
+  S.cancelled = false;
+  S.speeds = [];
+  $('#startBtn').disabled = true;
+  $('#stopBtn').disabled = false;
+  $('#resultCard').hidden = true;
+
+  const f = S.file;
+  const dest = $('#destSelect').value;
+  const overwrite = $('#overwrite').checked;
+
+  try {
+    // 1) 初始化（拿到 chunkSize / totalChunks）
+    const init = await api('/api/upload/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // 上传服务用 `sub` 决定保存到哪个子目录（原实现用 dest，服务端并不认）。
+      // 这里两个都发，保证新旧版本服务端都能落对位置。
+      body: JSON.stringify({ filename: f.name, size: f.size, sub: dest, dest }),
+    });
+
+    const chunkSize = init.chunkSize || 16 * 1024 * 1024;
+    const total = init.totalChunks || Math.ceil(f.size / chunkSize);
+    const uploadId = init.uploadId;
+
+    // 2) 续传：查已收到的分块，跳过它们
+    let skip = new Set();
+    try {
+      const st = await api(`/api/upload/${uploadId}/status`);
+      if (st && Array.isArray(st.received)) skip = new Set(st.received.map(Number));
+      if (skip.size) toast(`检测到未完成上传，续传 ${skip.size}/${total} 块`);
+    } catch {}
+
+    try {
+      localStorage.setItem(SESSION_LS, JSON.stringify({ uploadId, chunkSize, total, filename: f.name, size: f.size, dest, overwrite }));
+    } catch {}
+
+    // 3) 逐块上传
+    let done = skip.size;
+    let sentBytes = done * chunkSize;
+
+    for (let i = 0; i < total; i++) {
+      if (S.cancelled) throw new Error('已取消');
+
+      if (skip.has(i)) {
+        paintProgress((done / total) * 100, `跳过已传分块 ${i + 1}/${total}`);
+        continue;
+      }
+
+      const start = i * chunkSize;
+      const end = Math.min(start + chunkSize, f.size);
+      const blob = f.slice(start, end);
+
+      await putChunk(uploadId, i, blob);
+
+      done++;
+      sentBytes += blob.size;
+      addSpeed(sentBytes);
+
+      const speed = currentSpeed();
+      const remain = speed > 0 ? (f.size - sentBytes) / speed : 0;
+      paintProgress(
+        (sentBytes / f.size) * 100,
+        `分块 ${done}/${total} · ${speed > 0 ? fmtSize(speed) + '/s' : '—'} · 剩余 ${fmtEta(remain)}`
+      );
+    }
+
+    // 4) 通知服务端拼接
+    paintProgress(100, '服务端拼接中…');
+    const res = await api(`/api/upload/${uploadId}/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: f.name, size: f.size, sub: dest, dest, overwrite }),
+    });
+
+    try { localStorage.removeItem(SESSION_LS); } catch {}
+    $('#resultCard').hidden = false;
+    replace($('#resultText'), [
+      el('div', { style: { color: 'var(--tp-ok)', fontSize: 'var(--tp-fs-md)', fontWeight: '600' }, text: '✓ 上传完成' }),
+      el('div', { class: 'tp-sm tp-dim', style: { marginTop: '6px' }, text: (res && res.path) || `${dest}/${f.name}` }),
+    ]);
+    toastOk('上传完成');
+    log('upload-done', { name: f.name, size: f.size });
+  } catch (e) {
+    const msg = e.message || '上传失败';
+    $('#resultCard').hidden = false;
+    replace($('#resultText'), [
+      el('div', { class: 'tp-error', text: msg }),
+      el('div', { class: 'tp-sm tp-dim', style: { marginTop: '6px' }, text: '可再次点击「开始上传」续传（已传分块会跳过）' }),
+    ]);
+    toastDanger(msg);
+    log('upload-fail', msg);
+  } finally {
+    S.running = false;
+    S.xhr = null;
+    $('#startBtn').disabled = !S.file;
+    $('#stopBtn').disabled = true;
+    $('#hint').textContent = '';
+  }
+}
+
+function putChunk(uploadId, index, blob) {
+  return new Promise((resolve, reject) => {
+    const url = `${API_BASE}/api/upload/${uploadId}/chunk/${index}?key=${encodeURIComponent(S.key)}`;
+    const xhr = new XMLHttpRequest();
+    S.xhr = xhr;
+    xhr.open('PUT', url);
+    xhr.onload = () => {
+      if (xhr.status === 401) return reject(new Error('密钥错误'));
+      if (xhr.status >= 200 && xhr.status < 300) return resolve();
+      reject(new Error(`分块 ${index} 上传失败（HTTP ${xhr.status}）`));
+    };
+    xhr.onerror = () => reject(new Error(`分块 ${index} 网络错误`));
+    xhr.onabort = () => reject(new Error('已取消'));
+    xhr.send(blob);
+  });
+}
+
+/* ============================================================================
+   启动
+   ============================================================================ */
+
+startReporting();
+bindPanel();
+showVersionBadge();
+log('upload-ready');
+</script>
+</body>
+</html>

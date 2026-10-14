@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<title>音乐播放器 · Tesla</title>
+
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/app.css">
+<script src="/js/core/viewport.js"></script>
+
+<style>
+  .side-head { display: flex; flex-direction: column; align-items: flex-start; gap: var(--tp-sp-3); }
+
+  /* 主区：上=封面/歌词，下=控制 */
+  .now {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--tp-sp-5) var(--tp-sp-5) 0;
+    gap: var(--tp-sp-4);
+    overflow: hidden;
+  }
+
+  .art {
+    width: 132px;
+    height: 132px;
+    flex: 0 0 auto;
+    border-radius: var(--tp-r-lg);
+    background: linear-gradient(150deg, #1c2430, #0b0e12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 52px;
+    box-shadow: var(--tp-shadow);
+    transition: transform var(--tp-med) var(--tp-ease);
+  }
+  .art.is-playing { transform: scale(1.04); }
+
+  .now-title {
+    font-size: var(--tp-fs-xl);
+    font-weight: 700;
+    color: var(--tp-text);
+    text-align: center;
+    max-width: 90%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .now-sub { font-size: var(--tp-fs-base); color: var(--tp-dim); text-align: center; }
+
+  /* 歌词区：当前行高亮并居中滚动 */
+  .lyrics {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    max-width: 860px;
+    overflow-y: auto;
+    text-align: center;
+    padding: var(--tp-sp-6) var(--tp-sp-4);
+    scroll-behavior: smooth;
+    mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
+  }
+
+  .lyric-line {
+    font-size: var(--tp-fs-lg);
+    line-height: 1.7;
+    color: var(--tp-dim-2);
+    padding: 3px 0;
+    transition: color var(--tp-med) var(--tp-ease), font-size var(--tp-med) var(--tp-ease);
+  }
+  .lyric-line.past { color: var(--tp-dim); }
+  .lyric-line.current {
+    color: var(--tp-accent);
+    font-size: 24px;
+    font-weight: 700;
+    text-shadow: 0 0 18px rgba(0, 212, 255, .28);
+  }
+
+  .controls {
+    flex: 0 0 auto;
+    background: var(--tp-surface);
+    border-top: 1px solid var(--tp-line);
+    padding: var(--tp-sp-3) var(--tp-sp-5) var(--tp-sp-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--tp-sp-2);
+  }
+
+  /* 靠左：司机在左侧 */
+  .transport { display: flex; align-items: center; justify-content: flex-start; gap: var(--tp-sp-5); }
+
+  .play-btn {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: var(--tp-accent);
+    color: #00212b;
+    border: none;
+    font-size: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+  .play-btn:hover { background: var(--tp-accent-2); }
+
+  .bottom-row {
+    display: flex;
+    align-items: center;
+    gap: var(--tp-sp-4);
+    justify-content: flex-start;   /* 靠左：司机在左侧 */
+    flex-wrap: wrap;
+  }
+</style>
+</head>
+<body>
+
+<div class="tp-app">
+
+  <!-- ── 侧栏：音乐库 ─────────────────────────────────────────────── -->
+  <aside class="tp-sidebar">
+    <div class="side-head">
+      <a class="tp-back" href="/">← 返回首页</a>
+      <div class="tp-side-title">音乐播放器</div>
+    </div>
+
+    <div class="tp-side-section">
+      <div class="tp-side-label" id="libInfo">音乐库</div>
+    </div>
+
+    <ul class="tp-list tp-scroll-y" id="trackList" style="flex:1 1 auto; min-height:0;">
+      <li class="tp-empty"><span class="tp-spin"></span> 加载中…</li>
+    </ul>
+  </aside>
+
+  <!-- ── 主区 ─────────────────────────────────────────────────────── -->
+  <main class="tp-main">
+    <div class="now">
+      <div class="art" id="art">🎵</div>
+      <div class="now-title" id="nowTitle">未播放</div>
+      <div class="now-sub" id="nowSub">选择左侧歌曲开始播放</div>
+      <div class="lyrics tp-scroll-y" id="lyrics"></div>
+    </div>
+
+    <div class="controls">
+      <div class="tp-progress" id="progress">
+        <div class="tp-progress__track">
+          <div class="tp-progress__buffered" id="buffered"></div>
+          <div class="tp-progress__fill" id="fill"></div>
+        </div>
+        <div class="tp-progress__knob" id="knob" hidden></div>
+      </div>
+
+      <div class="tp-time">
+        <span id="curTime">0:00</span>
+        <span id="durTime">0:00</span>
+      </div>
+
+      <div class="transport">
+        <button class="tp-icon-btn" id="prevBtn" title="上一首">⏮</button>
+        <button class="play-btn" id="playBtn" title="播放 / 暂停">▶</button>
+        <button class="tp-icon-btn" id="nextBtn" title="下一首">⏭</button>
+      </div>
+
+      <div class="bottom-row">
+        <button class="tp-btn" id="shuffleBtn">🔀 随机: 关</button>
+        <button class="tp-btn" id="repeatBtn">🔁 顺序播放</button>
+        <label class="tp-volume" title="音量">
+          <span id="volIcon">🔊</span>
+          <input type="range" id="volume" min="0" max="1" step="0.05" value="1">
+        </label>
+        <button class="tp-icon-btn" data-tp-log-toggle title="诊断日志">📋</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<audio id="audio" crossorigin="anonymous"></audio>
+
+<script type="module">
+import { el, replace, fmtSize, fmtTime, cleanName, splitArtist, $, $$ } from '/js/core/dom.js';
+import { startReporting, bindPanel, log } from '/js/core/log.js';
+import { getJSON, showVersionBadge } from '/js/core/api.js';
+import { toast, toastOk, toastDanger } from '/js/core/toast.js';
+import { AudioClock } from '/js/core/clock.js';
+import { MediaCtl } from '/js/core/mediactl.js';
+
+/* ============================================================================
+   状态
+   ============================================================================ */
+
+const S = {
+  tracks: [],          // [{name,size}]
+  lyrics: [],          // [{name,content}]
+  cues: [],            // 当前歌的 [{t,text}]
+  index: -1,
+  shuffle: false,
+  repeat: 'off',       // off | all | one
+  lastLyricIdx: -1,
+  dragging: false,
+};
+
+const audio = $('#audio');
+const clock = new AudioClock(audio).attach();
+
+const SHUFFLE_KEY = 'tp_music_shuffle';
+const REPEAT_KEY = 'tp_music_repeat';
+const VOL_KEY = 'tp_volume';
+
+/* ============================================================================
+   LRC 解析
+   ----------------------------------------------------------------------------
+   重写前的实现不支持 [offset:] 标签，也没有处理一行多时间戳。
+   这里补上：车载音乐多是整轨，offset 校准很常见。
+   ============================================================================ */
+
+function parseLRC(text) {
+  const cues = [];
+  let offset = 0;
+
+  const lines = String(text).replace(/\r/g, '').split('\n');
+  const reTime = /\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g;
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+
+    // 元信息标签
+    const mOff = /^\[offset:\s*(-?\d+)\s*\]$/i.exec(line);
+    if (mOff) { offset = parseInt(mOff[1], 10) / 1000; continue; }
+    if (/^\[(ti|ar|al|by|re|ve|length):/i.test(line)) continue;
+
+    // 一行可能挂多个时间戳
+    const stamps = [];
+    let m;
+    reTime.lastIndex = 0;
+    while ((m = reTime.exec(line)) !== null) {
+      const min = parseInt(m[1], 10);
+      const sec = parseInt(m[2], 10);
+      const frac = m[3] ? parseInt(m[3].padEnd(3, '0'), 10) / 1000 : 0;
+      stamps.push(min * 60 + sec + frac);
+    }
+    if (!stamps.length) continue;
+
+    const text2 = line.replace(reTime, '').trim();
+    if (!text2) continue;   // 空行（间奏）丢弃
+
+    for (const t of stamps) cues.push({ t: t + offset, text: text2 });
+  }
+
+  cues.sort((a, b) => a.t - b.t);
+  return cues;
+}
+
+/* ============================================================================
+   曲库
+   ============================================================================ */
+
+async function loadLibrary() {
+  const list = $('#trackList');
+  try {
+    const [tracks, lyrics] = await Promise.all([
+      getJSON('/api/music', { timeout: 15000 }),
+      getJSON('/api/lyrics', { timeout: 15000 }).catch(() => []),
+    ]);
+    S.tracks = Array.isArray(tracks) ? tracks : [];
+    S.lyrics = Array.isArray(lyrics) ? lyrics : [];
+  } catch (e) {
+    replace(list, [el('li', { class: 'tp-empty' }, [
+      el('div', { text: '曲库加载失败' }),
+      el('div', { class: 'tp-sm', text: e.message }),
+      el('button', { class: 'tp-btn', text: '重试', onClick: loadLibrary }),
+    ])]);
+    return;
+  }
+
+  if (!S.tracks.length) {
+    replace(list, [el('li', { class: 'tp-empty', text: '音乐目录为空' })]);
+    return;
+  }
+
+  const total = S.tracks.reduce((s, t) => s + (t.size || 0), 0);
+  $('#libInfo').textContent = `${S.tracks.length} 首 · ${fmtSize(total)}`;
+
+  replace(list, S.tracks.map((t, i) => el('li', {
+    class: 'tp-item',
+    dataset: { index: String(i) },
+    onClick: () => playTrack(i),
+  }, [
+    el('div', { class: 'tp-item__title', text: cleanName(t.name) }),
+    el('div', { class: 'tp-item__meta', text: fmtSize(t.size) }),
+  ])));
+}
+
+function markActive() {
+  $$('#trackList .tp-item').forEach((li, i) => {
+    li.classList.toggle('is-active', i === S.index);
+  });
+}
+
+/* ============================================================================
+   歌词匹配
+   ----------------------------------------------------------------------------
+   服务端 /api/lyrics 返回的是 LRC 文件名（可能带 "01 - " 前缀），
+   而音乐文件名可能带扩展名。这里做多路宽松匹配。
+   ============================================================================ */
+
+function findLyrics(name) {
+  if (!S.lyrics.length) return [];
+  const base = String(name).replace(/\.[^.]+$/, '');
+  const norm = (s) => String(s).replace(/^\d+\s*-\s*/, '').trim().toLowerCase();
+
+  const target = norm(base);
+  const hit = S.lyrics.find((e) => {
+    const en = norm(e.name);
+    return en === target || e.name === name || e.name === base;
+  });
+  return hit ? parseLRC(hit.content) : [];
+}
+
+/* ============================================================================
+   播放
+   ============================================================================ */
+
+function playTrack(i, { autoplay = true } = {}) {
+  const track = S.tracks[i];
+  if (!track) return;
+
+  S.index = i;
+  S.lastLyricIdx = -1;
+  markActive();
+
+  audio.src = `/api/music/${encodeURIComponent(track.name)}`;
+  audio.load();
+
+  const { artist, title } = splitArtist(track.name);
+  $('#nowTitle').textContent = title;
+  $('#nowSub').textContent = `${artist} · ${i + 1}/${S.tracks.length}`;
+  $('#art').textContent = '🎵';
+  $('#art').classList.toggle('is-playing', autoplay);
+
+  // 歌词
+  S.cues = findLyrics(track.name);
+  renderLyrics();
+
+  if (autoplay) audio.play().catch(() => {});
+
+  syncMeta();
+  updatePlayBtn();
+  log('music-play', track.name);
+}
+
+function renderLyrics() {
+  const box = $('#lyrics');
+  if (!S.cues.length) {
+    replace(box, [el('div', { class: 'tp-empty', text: '暂无歌词' })]);
+    return;
+  }
+  replace(box, S.cues.map((c, i) =>
+    el('div', { class: 'lyric-line future', dataset: { i: String(i) }, text: c.text })
+  ));
+}
+
+/** 当前歌词行下标（线性扫描，LRC 行数不大）。 */
+function findCueIdx(t) {
+  let idx = -1;
+  for (let i = 0; i < S.cues.length; i++) {
+    if (S.cues[i].t <= t) idx = i;
+    else break;
+  }
+  return idx;
+}
+
+function updateLyrics(t) {
+  if (!S.cues.length) return;
+  const idx = findCueIdx(t);
+  if (idx === S.lastLyricIdx) return;
+  S.lastLyricIdx = idx;
+
+  const lines = $$('#lyrics .lyric-line');
+  for (let i = 0; i < lines.length; i++) {
+    const c = i < idx ? 'past' : i === idx ? 'current' : 'future';
+    const node = lines[i];
+    if (node.dataset.cls !== c) {
+      node.className = 'lyric-line ' + c;
+      node.dataset.cls = c;
+    }
+  }
+  if (idx >= 0 && lines[idx]) {
+    lines[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
+
+/* ============================================================================
+   控制
+   ============================================================================ */
+
+function togglePlay() {
+  if (S.index < 0) {
+    if (S.tracks.length) playTrack(0);
+    return;
+  }
+  if (audio.paused) audio.play().catch(() => {});
+  else audio.pause();
+}
+
+function playNext(auto = false) {
+  if (!S.tracks.length) return;
+  if (auto && S.repeat === 'one') { audio.currentTime = 0; audio.play().catch(() => {}); return; }
+
+  let i;
+  if (S.shuffle) {
+    i = Math.floor(Math.random() * S.tracks.length);
+    if (S.tracks.length > 1 && i === S.index) i = (i + 1) % S.tracks.length;
+  } else {
+    i = S.index + 1;
+    if (i >= S.tracks.length) {
+      if (auto && S.repeat === 'off') { updatePlayBtn(); return; }
+      i = 0;
+    }
+  }
+  playTrack(i);
+}
+
+function playPrev() {
+  if (!S.tracks.length) return;
+  // 播放超过 3 秒时，"上一首"先回到本曲开头（符合常见播放器习惯）
+  if (audio.currentTime > 3) { audio.currentTime = 0; clock.resync(); return; }
+  let i = S.index - 1;
+  if (i < 0) i = S.tracks.length - 1;
+  playTrack(i);
+}
+
+function updatePlayBtn() {
+  const playing = !audio.paused && S.index >= 0;
+  $('#playBtn').textContent = playing ? '⏸' : '▶';
+  $('#art').classList.toggle('is-playing', playing);
+  MediaCtl.setState(playing ? 'playing' : 'paused');
+}
+
+audio.addEventListener('play', updatePlayBtn);
+audio.addEventListener('pause', updatePlayBtn);
+audio.addEventListener('ended', () => playNext(true));
+
+/* ── 进度条 ───────────────────────────────────────────────────────────── */
+
+const progress = $('#progress');
+
+function frac(e) {
+  const r = progress.getBoundingClientRect();
+  return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+}
+
+progress.addEventListener('pointerdown', (e) => {
+  if (S.index < 0) return;
+  S.dragging = true;
+  progress.setPointerCapture(e.pointerId);
+  $('#knob').hidden = false;
+  preview(frac(e));
+});
+progress.addEventListener('pointermove', (e) => { if (S.dragging) preview(frac(e)); });
+progress.addEventListener('pointerup', (e) => {
+  if (!S.dragging) return;
+  S.dragging = false;
+  $('#knob').hidden = true;
+  if (Number.isFinite(audio.duration)) {
+    audio.currentTime = frac(e) * audio.duration;
+    clock.resync();
+    S.lastLyricIdx = -1;
+  }
+});
+progress.addEventListener('pointercancel', () => { S.dragging = false; $('#knob').hidden = true; });
+
+function preview(f) {
+  $('#fill').style.width = (f * 100) + '%';
+  $('#knob').style.left = (f * 100) + '%';
+  if (Number.isFinite(audio.duration)) $('#curTime').textContent = fmtTime(f * audio.duration);
+}
+
+/* 渲染循环（用 rAF + 看门狗，避免页面隐藏后停摆） */
+let rafId = 0, rafAt = 0, watchIv = 0;
+
+function scheduleRaf() {
+  rafId = requestAnimationFrame(() => {
+    rafId = 0;
+    rafAt = Date.now();
+    tick();
+    scheduleRaf();
+  });
+}
+
+function tick() {
+  const pos = clock.position();
+  if (pos === null) return;
+  const dur = Number.isFinite(audio.duration) ? audio.duration : 0;
+
+  if (dur > 0 && !S.dragging) {
+    const f = Math.max(0, Math.min(1, pos / dur));
+    $('#fill').style.width = (f * 100) + '%';
+    $('#knob').style.left = (f * 100) + '%';
+    $('#curTime').textContent = fmtTime(pos);
+  }
+  $('#durTime').textContent = fmtTime(dur);
+
+  // 缓冲条
+  try {
+    if (audio.buffered.length && dur > 0) {
+      let end = 0;
+      for (let i = 0; i < audio.buffered.length; i++) {
+        if (audio.buffered.start(i) <= pos + 1) end = Math.max(end, audio.buffered.end(i));
+      }
+      $('#buffered').style.width = Math.min(100, (end / dur) * 100) + '%';
+    }
+  } catch {}
+
+  updateLyrics(pos);
+  MediaCtl.setPosition(dur, pos, 1);
+}
+
+function startLoop() {
+  rafAt = Date.now();
+  scheduleRaf();
+  clearInterval(watchIv);
+  watchIv = setInterval(() => {
+    if (Date.now() - rafAt > 1500) {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = 0;
+      scheduleRaf();
+    }
+  }, 1000);
+}
+
+/* ── 音量 / 随机 / 循环 ───────────────────────────────────────────────── */
+
+const savedVol = parseFloat(localStorage.getItem(VOL_KEY));
+if (Number.isFinite(savedVol)) { audio.volume = savedVol; $('#volume').value = String(savedVol); }
+updateVolIcon();
+
+$('#volume').addEventListener('input', (e) => {
+  audio.volume = parseFloat(e.target.value);
+  try { localStorage.setItem(VOL_KEY, String(audio.volume)); } catch {}
+  updateVolIcon();
+});
+
+function updateVolIcon() {
+  $('#volIcon').textContent = audio.volume === 0 ? '🔇' : audio.volume < 0.5 ? '🔉' : '🔊';
+}
+
+S.shuffle = localStorage.getItem(SHUFFLE_KEY) === '1';
+S.repeat = localStorage.getItem(REPEAT_KEY) || 'off';
+renderModes();
+
+function renderModes() {
+  $('#shuffleBtn').textContent = `🔀 随机: ${S.shuffle ? '开' : '关'}`;
+  $('#shuffleBtn').classList.toggle('is-active', S.shuffle);
+  $('#repeatBtn').textContent = S.repeat === 'one' ? '🔂 单曲循环'
+                              : S.repeat === 'all' ? '🔁 列表循环' : '➡️ 顺序播放';
+}
+
+$('#shuffleBtn').addEventListener('click', () => {
+  S.shuffle = !S.shuffle;
+  try { localStorage.setItem(SHUFFLE_KEY, S.shuffle ? '1' : '0'); } catch {}
+  renderModes();
+  toast(`随机播放：${S.shuffle ? '开' : '关'}`);
+});
+
+$('#repeatBtn').addEventListener('click', () => {
+  S.repeat = S.repeat === 'off' ? 'all' : S.repeat === 'all' ? 'one' : 'off';
+  try { localStorage.setItem(REPEAT_KEY, S.repeat); } catch {}
+  renderModes();
+  toast(S.repeat === 'one' ? '单曲循环' : S.repeat === 'all' ? '列表循环' : '顺序播放');
+});
+
+/* ── 媒体键 / 方向盘 ─────────────────────────────────────────────────── */
+
+function syncMeta() {
+  const t = S.tracks[S.index];
+  if (!t) return;
+  const { artist, title } = splitArtist(t.name);
+  MediaCtl.setMeta({
+    title,
+    artist,
+    album: `音乐库 ${S.index + 1}/${S.tracks.length}`,
+    artwork: MediaCtl.cover(title),
+  });
+}
+
+MediaCtl.bind({
+  play: () => { if (S.index < 0 && S.tracks.length) playTrack(0); else audio.play().catch(() => {}); },
+  pause: () => audio.pause(),
+  toggle: togglePlay,
+  next: () => playNext(),
+  prev: () => playPrev(),
+  stop: () => { audio.pause(); audio.currentTime = 0; },
+  seekBy: (d) => {
+    if (!Number.isFinite(audio.duration)) return;
+    audio.currentTime = Math.max(0, Math.min(audio.duration, audio.currentTime + d));
+    clock.resync();
+  },
+  seekTo: (s) => { if (Number.isFinite(audio.duration)) { audio.currentTime = Math.max(0, Math.min(audio.duration, s)); clock.resync(); } },
+  isPlaying: () => !audio.paused,
+});
+
+/* ============================================================================
+   交互绑定
+   ============================================================================ */
+
+$('#playBtn').addEventListener('click', togglePlay);
+$('#nextBtn').addEventListener('click', () => playNext());
+$('#prevBtn').addEventListener('click', playPrev);
+
+document.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); playNext(); }
+  else if (e.key === 'ArrowLeft')  { e.preventDefault(); playPrev(); }
+  else if (e.key === 'ArrowUp')    { e.preventDefault(); audio.volume = Math.min(1, audio.volume + 0.1); $('#volume').value = String(audio.volume); updateVolIcon(); }
+  else if (e.key === 'ArrowDown')  { e.preventDefault(); audio.volume = Math.max(0, audio.volume - 0.1); $('#volume').value = String(audio.volume); updateVolIcon(); }
+});
+
+window.addEventListener('pagehide', () => { try { audio.pause(); } catch {} });
+
+/* ============================================================================
+   启动
+   ============================================================================ */
+
+startReporting();
+bindPanel();
+startLoop();
+loadLibrary();
+showVersionBadge();
+log('music-ready');
+</script>
+</body>
+</html>

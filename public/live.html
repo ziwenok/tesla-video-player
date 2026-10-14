@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<title>电视直播 · Tesla</title>
+
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/app.css">
+<script src="/js/core/viewport.js"></script>
+
+<style>
+  .ch-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+    gap: var(--tp-sp-3);
+  }
+
+  .live-tile {
+    background: var(--tp-surface-2);
+    border: 1px solid var(--tp-line);
+    border-radius: var(--tp-r-lg);
+    min-height: 84px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    cursor: pointer;
+    padding: var(--tp-sp-2);
+    text-align: center;
+    transition: background var(--tp-fast) var(--tp-ease), border-color var(--tp-fast) var(--tp-ease);
+  }
+  .live-tile:hover { background: var(--tp-surface-3); border-color: var(--tp-accent-line); }
+  .live-tile__num { font-size: 24px; font-weight: 700; color: var(--tp-accent); line-height: 1; }
+  .live-tile__name { font-size: var(--tp-fs-sm); color: var(--tp-text-2); line-height: 1.25; }
+
+  /* 播放视图 */
+  #playView { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+
+  .pv-bar {
+    position: absolute;
+    left: 0; right: 0; top: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--tp-sp-2);
+    padding: var(--tp-sp-3) var(--tp-sp-4);
+    background: linear-gradient(to bottom, rgba(0,0,0,.8), transparent);
+    z-index: 5;
+  }
+  .pv-name { font-size: var(--tp-fs-md); font-weight: 600; color: #fff; text-shadow: 0 1px 4px #000; flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .pv-chips {
+    position: absolute;
+    left: var(--tp-sp-4);
+    top: 62px;
+    z-index: 5;
+    display: flex;
+    gap: var(--tp-sp-2);
+    flex-wrap: wrap;
+    max-width: 70%;
+  }
+
+  /* 全屏时顶栏改为浮层，画面铺满 —— 与播放器/B站页一致 */
+  #app.is-fs .tp-topbar { position: absolute; left: 0; right: 0; top: 0; z-index: 6; background: linear-gradient(to bottom, rgba(0,0,0,.8), transparent); border-bottom: none; }
+
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--tp-danger);
+    display: inline-block;
+    flex: 0 0 auto;
+  }
+  .dot.is-live { background: var(--tp-ok); animation: blink 1.6s ease-in-out infinite; }
+  @keyframes blink { 50% { opacity: .3; } }
+</style>
+</head>
+<body>
+
+<div class="tp-app tp-app--col" id="app">
+
+  <!-- ── 顶栏 ─────────────────────────────────────────────────────── -->
+  <div class="tp-topbar">
+    <button class="tp-back" id="backBtn">← 返回首页</button>
+    <span class="dot" id="dot"></span>
+    <span class="tp-topbar__title" id="barTitle">电视直播</span>
+    <!-- 控件紧跟标题靠左排列：司机在左侧，右侧够不到 -->
+    <span class="tp-chip" id="stChip" hidden></span>
+    <!-- 播放中才出现的控制；初始隐藏（列表视图不需要） -->
+    <button class="tp-btn" id="switchBtn" hidden>⇄ 换源</button>
+    <button class="tp-btn" id="muteBtn" hidden>🔊</button>
+    <button class="tp-btn" id="fsBtn" hidden>⛶</button>
+    <button class="tp-icon-btn" data-tp-log-toggle title="诊断日志">📋</button>
+  </div>
+
+  <!-- ── 列表视图 ─────────────────────────────────────────────────── -->
+  <div class="tp-content tp-scroll-y" id="listView">
+    <div class="tp-empty"><span class="tp-spin"></span> 加载频道…</div>
+  </div>
+
+  <!-- ── 播放视图 ─────────────────────────────────────────────────── -->
+  <div id="playView" hidden>
+    <div class="tp-stage" id="stage">
+      <canvas id="canvas" width="960" height="540"></canvas>
+
+      <div class="pv-bar">
+        <span class="pv-name" id="pvName">—</span>
+      </div>
+
+      <div class="pv-chips">
+        <span class="tp-chip tp-chip--accent" id="chipSrc" hidden></span>
+        <span class="tp-chip" id="chipBuf" hidden></span>
+      </div>
+
+      <div class="tp-stage__overlay" id="cover">
+        <span class="tp-spin"></span>
+        <div id="coverMsg">正在连接直播信号…</div>
+        <div class="tp-sm" id="coverSub"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<audio id="audio" crossorigin="anonymous"></audio>
+
+<script type="module">
+import { el, replace, fmtTime, $, $$ } from '/js/core/dom.js';
+import { startReporting, bindPanel, log } from '/js/core/log.js';
+import { getJSON, showVersionBadge } from '/js/core/api.js';
+import { toast, toastWarn, toastDanger } from '/js/core/toast.js';
+import { AudioClock } from '/js/core/clock.js';
+import { FrameStream, sizeCanvas } from '/js/core/frames.js';
+import { MediaCtl } from '/js/core/mediactl.js';
+
+/* ============================================================================
+   直播的三个硬约束（重写前实测踩出来的，改之前先读）
+   ----------------------------------------------------------------------------
+   1. 音视频必须同源
+      画面走 /ws/frames?live=，声音走 /api/live/:ch/audio，服务端用同一份
+      "源仲裁"决策（liveResolveSrc）保证两路取的是同一条流。客户端这边要做的
+      是：换源时两路一起换，否则会出现"声音是广告、画面是正常频道"。
+   2. "源慢"和"解码慢"是两回事
+      前者降档无用，只会把已经缓冲好的启动等待整个丢掉（实测有源首帧要
+      19~46 秒，降档重连会变成死循环）。所以：迟迟没首帧 → 提示并（若刚换过源）
+      自动再换一个源；已在播放但久无新帧 → 同档位重连。
+   3. 换源时必须把旧连接的**全部**回调摘掉
+      只置 onclose=null 不够：旧 socket 的 onmessage 仍会把上一路的帧塞进
+      缓冲、把源信息改回旧源 → 换源后状态被旧连接污染。用代际计数（wsGen）。
+   ============================================================================ */
+
+/* 画面档位：宽高必须偶数（yuv420p 要求，奇数会让 ffmpeg 输出 0 字节） */
+const QUALITIES = [
+  { w: 960, h: 540, fps: 15, name: '540p' },
+  { w: 640, h: 360, fps: 15, name: '360p' },
+  { w: 480, h: 270, fps: 12, name: '270p' },
+  { w: 360, h: 202, fps: 10, name: '202p' },   // 注意是 202 不是 203
+];
+
+const MUTE_KEY = 'tp_live_mute';
+const LIVE_SLOW_MS = 18000;      // 迟迟不出首帧 → 认为源慢
+const LIVE_STALL_MS = 12000;     // 已在播放但久无新帧 → 同档位重连
+const AUTO_NEXT_MAX = 2;         // 自动换源次数上限
+
+const S = {
+  channels: [],
+  ch: null,
+  qi: 0,
+  stream: null,
+  clock: null,
+  muted: localStorage.getItem(MUTE_KEY) === '1',
+  autoNextLeft: 0,
+  audioStallN: 0,
+  audioStallAt: 0,
+  stallReloads: 0,
+  firstFrameAt: 0,
+  lastFrameAt: 0,
+  srcInfo: null,
+  fs: false,
+};
+
+const audio = $('#audio');
+
+/* ============================================================================
+   频道列表
+   ============================================================================ */
+
+async function loadChannels() {
+  const view = $('#listView');
+  let list;
+  try {
+    const d = await getJSON('/api/live/channels', { timeout: 20000 });
+    list = d.list || [];
+  } catch (e) {
+    replace(view, [el('div', { class: 'tp-empty' }, [
+      el('div', { class: 'tp-error', text: '频道列表加载失败：' + e.message }),
+      el('button', { class: 'tp-btn tp-btn--primary', text: '重试', onClick: loadChannels }),
+    ])]);
+    return;
+  }
+
+  S.channels = list;
+  renderChannelList();
+}
+
+function channelIcon(ch) {
+  const m = /cctv[- ]?(\d+\+?)/i.exec(ch.title || '');
+  if (m) return m[1].toUpperCase();
+  // 卫视：图标用台名前两字（下面名称仍显示完整台名）
+  return String(ch.title || '?').replace(/卫视$/, '').slice(0, 2);
+}
+
+/** 频道显示名：完整台名（图标只作缩略）。 */
+function channelLabel(ch) {
+  return String(ch.title || '');
+}
+
+function renderChannelList() {
+  const view = $('#listView');
+  const groups = new Map();
+  for (const ch of S.channels) {
+    const g = ch.group || '其它';
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(ch);
+  }
+
+  const frag = [];
+  for (const [group, chans] of groups) {
+    frag.push(el('div', { class: 'tp-group-title', text: group }));
+    frag.push(el('div', { class: 'ch-grid' }, chans.map((ch) => el('div', {
+      class: 'live-tile',
+      onClick: () => startLive(ch.id, ch.title),
+    }, [
+      el('div', { class: 'live-tile__num', text: channelIcon(ch) }),
+      el('div', { class: 'live-tile__name', text: channelLabel(ch) }),
+    ]))));
+  }
+
+  if (!frag.length) frag.push(el('div', { class: 'tp-empty', text: '没有可用频道' }));
+  replace(view, frag);
+}
+
+/* ============================================================================
+   播放
+   ============================================================================ */
+
+function setCover(show, msg, sub) {
+  const c = $('#cover');
+  c.hidden = !show;
+  if (msg) $('#coverMsg').textContent = msg;
+  if (sub !== undefined) $('#coverSub').textContent = sub;
+}
+
+function setChip(node, text, cls) {
+  node.textContent = text;
+  node.hidden = !text;
+  if (cls !== undefined) node.className = 'tp-chip' + (cls ? ' ' + cls : '');
+}
+
+async function startLive(chId, title) {
+  stopLive();
+
+  S.ch = { id: chId, title };
+  S.qi = 0;
+  S.autoNextLeft = 0;
+  S.stallReloads = 0;
+  S.firstFrameAt = 0;
+  S.srcInfo = null;
+
+  $('#listView').hidden = true;
+  $('#playView').hidden = false;
+  $('#pvName').textContent = title;
+  $('#switchBtn').hidden = false;
+  $('#muteBtn').hidden = false;
+  $('#fsBtn').hidden = false;
+  $('#dot').classList.add('is-live');
+  $('#barTitle').textContent = '直播中';
+
+  setCover(true, '正在连接直播信号…', '服务端正在体检并选择可用源');
+
+  // 音频（与画面共用服务端同一份源决策）
+  audio.src = `/api/live/${encodeURIComponent(chId)}/audio`;
+  audio.muted = S.muted;
+  updateMuteBtn();
+
+  S.clock = new AudioClock(audio).attach();
+
+  const q = QUALITIES[S.qi];
+  const canvas = $('#canvas');
+  sizeCanvas(canvas, q, S.fs);
+
+  const stream = new FrameStream({
+    canvas, audio,
+    url: `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/frames`,
+    query: { live: chId, fps: q.fps, w: q.w, h: q.h, q: 5 },
+    label: 'live:' + chId,
+    syncLag: 0.12,
+    ownLoop: true,
+    onSrcInfo: (msg) => {
+      if (msg.type === 'src') {
+        S.srcInfo = msg;
+        setChip($('#chipSrc'), `源 ${msg.idx + 1}/${msg.total}`, 'tp-chip--accent');
+        log('live-src', { ch: chId, idx: msg.idx });
+      } else if (msg.type === 'srcfail') {
+        log('live-srcfail', msg);
+        // 服务端判定的坏源：自动再换一个（有次数上限）
+        if (S.autoNextLeft > 0) { S.autoNextLeft--; doSwitchSource(); }
+      }
+    },
+    onClose: (ev, frames) => {
+      if (frames === 0) {
+        setCover(true, '信号未就绪，正在重连…', '');
+      }
+    },
+  });
+
+  S.stream = stream;
+  stream.start(0);
+
+  try {
+    await audio.play();
+    setCover(false);
+    S.firstFrameAt = Date.now();
+  } catch {
+    setCover(true, '点此开始播放', '浏览器阻止了自动播放');
+    const c = $('#cover');
+    c.style.cursor = 'pointer';
+    c.onclick = () => {
+      c.onclick = null;
+      c.style.cursor = '';
+      audio.play().then(() => { setCover(false); S.firstFrameAt = Date.now(); }).catch(() => {});
+    };
+  }
+
+  // 音频停摆计数：约 1 分钟内连续 3 次 → 多半是当前源不稳，自动换源比干等有效
+  audio.addEventListener('stalled', onAudioStalled);
+  audio.addEventListener('error', onAudioStalled);
+
+  // 音频异常兜底
+  S.clock.watch({
+    onFail: (why) => {
+      log('live-audio-fail', why);
+      if (why === 'never-started') {
+        setCover(true, '音频未就绪，正在换源…', '');
+        if (S.autoNextLeft > 0) { S.autoNextLeft--; doSwitchSource(); }
+        else restartAudio();
+      }
+    },
+  });
+
+  startWatchdog();
+  MediaCtl.setMeta({ title, artist: '电视直播', album: '直播', artwork: MediaCtl.cover(title) });
+  log('live-start', { ch: chId, title });
+}
+
+function onAudioStalled() {
+  const now = Date.now();
+  if (now - S.audioStallAt > 60000) S.audioStallN = 0;
+  S.audioStallAt = now;
+  S.audioStallN++;
+  log('live-audio-stall', S.audioStallN);
+  if (S.audioStallN >= 3) {
+    S.audioStallN = 0;
+    // 音频连续停摆：换源
+    S.autoNextLeft = Math.max(S.autoNextLeft, 1);
+    doSwitchSource();
+  }
+}
+
+function restartAudio() {
+  if (!S.ch) return;
+  audio.src = `/api/live/${encodeURIComponent(S.ch.id)}/audio?t=${Date.now()}`;
+  audio.muted = S.muted;
+  audio.play().catch(() => {});
+}
+
+function restartStream(seek = 0) {
+  if (!S.stream || !S.ch) return;
+  S.stream.start(seek);
+}
+
+function stopLive() {
+  stopWatchdog();
+  if (S.stream) { try { S.stream.destroy(); } catch {} S.stream = null; }
+  if (S.clock) { try { S.clock.detach(); } catch {} S.clock = null; }
+  audio.removeEventListener('stalled', onAudioStalled);
+  audio.removeEventListener('error', onAudioStalled);
+  try { audio.pause(); audio.removeAttribute('src'); audio.load(); } catch {}
+  S.ch = null;
+}
+
+function backToList() {
+  stopLive();
+  $('#listView').hidden = false;
+  $('#playView').hidden = true;
+  $('#switchBtn').hidden = true;
+  $('#muteBtn').hidden = true;
+  $('#fsBtn').hidden = true;
+  $('#dot').classList.remove('is-live');
+  $('#barTitle').textContent = '电视直播';
+  setChip($('#chipSrc'), '', '');
+  setChip($('#chipBuf'), '', '');
+  setChip($('#stChip'), '', '');
+}
+
+/* ── 换源 ─────────────────────────────────────────────────────────────── */
+
+async function doSwitchSource() {
+  if (!S.ch) return;
+  setCover(true, '正在换源…', '');
+  log('live-switch', { ch: S.ch.id });
+
+  try {
+    // 服务端刻意不做健康/广告过滤 —— 自动判定可能误杀也可能漏判，
+    // 用户看到广告/垫片时能自己换一个，判断权交回用户。
+    const d = await getJSON(`/api/live/${encodeURIComponent(S.ch.id)}/nextsrc`, { timeout: 30000 });
+    log('live-switch-ok', d);
+  } catch (e) {
+    log('live-switch-fail', e.message);
+  }
+
+  // 两路一起换：先停旧连接（避免旧回调污染），再重建
+  if (S.stream) { S.stream.stop(true); }
+  restartAudio();
+  restartStream(0);
+  setCover(true, '正在连接新源…', '');
+}
+
+/* ============================================================================
+   看门狗：首帧超时 / 播放中卡死 / 缓冲
+   ============================================================================ */
+
+let watchdogIv = 0;
+
+function startWatchdog() {
+  stopWatchdog();
+  let lastDrawn = 0;
+  let lastDrawnAt = Date.now();
+  const startedAt = Date.now();
+
+  watchdogIv = setInterval(() => {
+    if (!S.ch || !S.stream) return;
+    const now = Date.now();
+
+    // 缓冲芯片
+    setChip($('#chipBuf'), S.stream.statsText(), '');
+
+    const drawn = S.stream.drawn;
+    if (drawn !== lastDrawn) {
+      lastDrawn = drawn;
+      lastDrawnAt = now;
+      if (!S.firstFrameAt) S.firstFrameAt = now;
+      S.stallReloads = 0;
+      // 只要画面在出就必须收起遮罩。
+      // 曾经的 bug：只在"首次出帧"时收遮罩，于是卡顿过一次之后遮罩永远盖在
+      // 正常画面上 —— 用户看到的是"正在重连…"叠在清晰的电视画面上。
+      if (!S.gaveUp) setCover(false);
+      return;
+    }
+
+    // 一帧都没出：源慢
+    if (!S.firstFrameAt) {
+      if (now - startedAt > LIVE_SLOW_MS) {
+        if (S.autoNextLeft > 0) {
+          S.autoNextLeft--;
+          log('live-slow-switch');
+          doSwitchSource();
+        } else {
+          setCover(true, '这个源迟迟没有画面', '可点「换源」试试其它源');
+          setChip($('#stChip'), '源慢', 'tp-chip--warn');
+        }
+      }
+      return;
+    }
+
+    // 已在播放但久无新帧：同档位重连（降质只会更糟）
+    if (now - lastDrawnAt > LIVE_STALL_MS) {
+      lastDrawnAt = now;
+      S.stallReloads++;
+      log('live-stall', { reloads: S.stallReloads });
+      if (S.stallReloads >= 4) {
+        setCover(true, '画面持续中断', '可点「换源」试试其它源');
+        setChip($('#stChip'), '卡顿', 'tp-chip--danger');
+      } else {
+        setCover(true, '正在重连…', '');
+        restartStream(0);
+      }
+    }
+  }, 1000);
+}
+
+function stopWatchdog() { clearInterval(watchdogIv); watchdogIv = 0; }
+
+/* ============================================================================
+   静音 / 全屏
+   ============================================================================ */
+
+function updateMuteBtn() {
+  $('#muteBtn').textContent = S.muted ? '🔇' : '🔊';
+}
+
+$('#muteBtn').addEventListener('click', () => {
+  S.muted = !S.muted;
+  audio.muted = S.muted;
+  try { localStorage.setItem(MUTE_KEY, S.muted ? '1' : '0'); } catch {}
+  updateMuteBtn();
+});
+
+$('#fsBtn').addEventListener('click', async () => {
+  const appEl = $('#app');
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await appEl.requestFullscreen();
+  } catch {
+    // QtWebEngine 的 Fullscreen API 不可靠：用 CSS 伪全屏兜底
+    appEl.classList.toggle('is-fs');
+    S.fs = appEl.classList.contains('is-fs');
+  }
+  sizeCanvas($('#canvas'), QUALITIES[S.qi], S.fs || !!document.fullscreenElement);
+});
+
+document.addEventListener('fullscreenchange', () => {
+  S.fs = !!document.fullscreenElement;
+  sizeCanvas($('#canvas'), QUALITIES[S.qi], S.fs);
+});
+
+/* ============================================================================
+   媒体键 / 方向盘
+   ============================================================================ */
+
+function chSwitch(delta) {
+  if (!S.channels.length) return;
+  const i = S.channels.findIndex((c) => c.id === S.ch?.id);
+  if (i < 0) return;
+  const next = S.channels[(i + delta + S.channels.length) % S.channels.length];
+  startLive(next.id, next.title);
+}
+
+MediaCtl.bind({
+  play: () => { audio.muted = false; S.muted = false; updateMuteBtn(); audio.play().catch(() => {}); },
+  pause: () => { audio.muted = true; S.muted = true; updateMuteBtn(); },
+  toggle: () => { S.muted = !S.muted; audio.muted = S.muted; updateMuteBtn(); },
+  stop: backToList,
+  next: () => chSwitch(1),
+  prev: () => chSwitch(-1),
+  isPlaying: () => !audio.paused && !S.muted,
+});
+
+setInterval(() => {
+  if (S.ch) MediaCtl.setState(S.muted ? 'paused' : 'playing');
+}, 2000);
+
+/* ============================================================================
+   交互绑定
+   ============================================================================ */
+
+$('#backBtn').addEventListener('click', () => {
+  if (S.ch) backToList();
+  else location.href = '/';
+});
+
+$('#switchBtn').addEventListener('click', doSwitchSource);
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && S.ch) backToList();
+});
+
+window.addEventListener('pagehide', () => { try { stopLive(); } catch {} });
+
+/* ============================================================================
+   启动
+   ============================================================================ */
+
+startReporting();
+bindPanel();
+loadChannels();
+showVersionBadge();
+log('live-ready');
+</script>
+</body>
+</html>

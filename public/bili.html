@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<title>B站视频 · Tesla</title>
+
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/app.css">
+<script src="/js/core/viewport.js"></script>
+
+<style>
+  .side-head { display: flex; flex-direction: column; align-items: flex-start; gap: var(--tp-sp-3); }
+  .grid-wrap { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--tp-sp-5); }
+
+  .mode-btn { justify-content: flex-start; }
+
+  .list-head {
+    display: flex;
+    align-items: center;
+    gap: var(--tp-sp-3);
+    margin-bottom: var(--tp-sp-4);
+    flex-wrap: wrap;
+  }
+  .list-head__title { font-size: var(--tp-fs-md); font-weight: 600; color: var(--tp-text); }
+  .list-head__sub { font-size: var(--tp-fs-sm); color: var(--tp-dim); }
+
+  /* 快捷关键词按钮 */
+  .kw-row { display: flex; gap: var(--tp-sp-2); flex-wrap: wrap; margin-bottom: var(--tp-sp-4); }
+  .kw-btn {
+    padding: 6px 12px;
+    background: var(--tp-surface-2);
+    border: 1px solid var(--tp-line-2);
+    border-radius: var(--tp-r-pill);
+    color: var(--tp-text-2);
+    font-size: var(--tp-fs-sm);
+    cursor: pointer;
+  }
+  .kw-btn:hover { border-color: var(--tp-accent-line); color: var(--tp-accent); }
+
+  /* UP / 收藏夹卡片 */
+  .ucard {
+    display: flex;
+    align-items: center;
+    gap: var(--tp-sp-3);
+    background: var(--tp-surface-2);
+    border: 1px solid var(--tp-line);
+    border-radius: var(--tp-r-lg);
+    padding: var(--tp-sp-3);
+    cursor: pointer;
+  }
+  .ucard:hover { background: var(--tp-surface-3); border-color: var(--tp-accent-line); }
+  .ucard img { width: 46px; height: 46px; border-radius: 50%; object-fit: cover; background: #222; flex: 0 0 auto; }
+  .ucard__name { font-size: var(--tp-fs-base); color: var(--tp-text); }
+  .ucard__sign { font-size: var(--tp-fs-sm); color: var(--tp-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* 分页 */
+  .pager { display: flex; align-items: center; gap: var(--tp-sp-3); justify-content: center; margin: var(--tp-sp-6) 0; }
+  .pager__info { font-size: var(--tp-fs-sm); color: var(--tp-dim); }
+
+  /* 播放器覆盖层 */
+  #playerOv { z-index: var(--tp-z-overlay); }
+  #playerOv .parea { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; position: relative; }
+
+  .pv-top {
+    position: absolute;
+    left: 0; right: 0; top: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--tp-sp-2);
+    padding: var(--tp-sp-3) var(--tp-sp-4);
+    background: linear-gradient(to bottom, rgba(0,0,0,.78), transparent);
+    z-index: 5;
+  }
+  .pv-title { font-size: var(--tp-fs-md); font-weight: 600; color: #fff; flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 4px #000; }
+
+  .pv-status { position: absolute; left: var(--tp-sp-4); top: 64px; z-index: 5; display: flex; gap: var(--tp-sp-2); flex-wrap: wrap; }
+
+  .pv-bottom {
+    flex: 0 0 auto;
+    background: var(--tp-surface);
+    border-top: 1px solid var(--tp-line);
+    padding: var(--tp-sp-2) var(--tp-sp-4) var(--tp-sp-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--tp-sp-2);
+  }
+
+  .qr-img { width: 220px; height: 220px; background: #fff; border-radius: var(--tp-r); display: flex; align-items: center; justify-content: center; }
+  .qr-img img { width: 100%; height: 100%; }
+
+  /* 清理按钮行 */
+  .tool-row { display: flex; gap: var(--tp-sp-2); }
+</style>
+</head>
+<body>
+
+<div class="tp-app" id="app">
+
+  <!-- ── 侧栏 ──────────────────────────────────────────────────────── -->
+  <aside class="tp-sidebar">
+    <div class="side-head">
+      <a class="tp-back" href="/">← 返回首页</a>
+      <div class="tp-side-title">B站视频</div>
+    </div>
+
+    <div class="tp-col">
+      <input class="tp-input" id="searchInput" type="text" placeholder="搜索 B站视频…" autocomplete="off">
+      <button class="tp-btn tp-btn--primary" id="searchBtn">搜索</button>
+    </div>
+
+    <div class="tp-side-section">
+      <div class="tp-side-label">模式</div>
+      <button class="tp-btn tp-btn--ghost mode-btn" data-mode="hot">🔥 热门</button>
+      <button class="tp-btn tp-btn--ghost mode-btn" data-mode="rec">✨ 推荐</button>
+      <button class="tp-btn tp-btn--ghost mode-btn" data-mode="following">❤️ 我的关注</button>
+      <button class="tp-btn tp-btn--ghost mode-btn" data-mode="fav">⭐ 我的收藏</button>
+    </div>
+
+    <div class="tp-side-section">
+      <div class="tp-side-label">频道</div>
+      <button class="tp-btn tp-btn--ghost mode-btn" data-mode="xiren">🎭 喜人</button>
+      <button class="tp-btn tp-btn--ghost mode-btn" data-mode="yts">🎤 脱口秀</button>
+      <button class="tp-btn tp-btn--ghost mode-btn" data-mode="music">🎵 音乐</button>
+    </div>
+
+    <button class="tp-btn" id="refreshBtn">↻ 换一批</button>
+
+    <!-- 登录/清理紧跟在上方按钮之后靠左排列（不用 spacer 推到最下方） -->
+    <div class="tool-row">
+      <button class="tp-btn tp-btn--ghost" id="loginBtn">扫码登录</button>
+      <button class="tp-btn tp-btn--ghost" id="cleanupBtn" title="清理服务端 ffmpeg 进程">🧹</button>
+    </div>
+  </aside>
+
+  <!-- ── 主区 ──────────────────────────────────────────────────────── -->
+  <main class="tp-main">
+    <div class="grid-wrap tp-scroll-y" id="gridWrap">
+      <div class="tp-empty"><span class="tp-spin"></span> 加载中…</div>
+    </div>
+  </main>
+</div>
+
+<!-- ── 播放器覆盖层 ──────────────────────────────────────────────────── -->
+<div class="tp-overlay" id="playerOv" hidden>
+  <div class="pv-top">
+    <!-- 控件靠左：司机在左侧 -->
+    <button class="tp-btn" id="pvPlay">⏸</button>
+    <button class="tp-btn" id="pvMockD" title="降低画质档位">降低画质</button>
+    <button class="tp-btn" id="pvFs">⛶</button>
+    <button class="tp-btn" id="pvClose">关闭</button>
+    <div class="pv-title" id="pvTitle">—</div>
+  </div>
+
+  <div class="parea">
+    <div class="tp-stage" id="pvStage">
+      <canvas id="pvCanvas" width="960" height="540"></canvas>
+
+      <div class="pv-status">
+        <span class="tp-chip tp-chip--accent" id="pvMode">—</span>
+        <span class="tp-chip" id="pvBuf" hidden></span>
+      </div>
+
+      <div class="tp-stage__overlay" id="pvLoad">
+        <span class="tp-spin"></span>
+        <div id="pvLoadText">连接中…</div>
+      </div>
+    </div>
+
+    <div class="pv-bottom">
+      <div class="tp-progress" id="pvProgress">
+        <div class="tp-progress__track">
+          <div class="tp-progress__buffered" id="pvBuffered"></div>
+          <div class="tp-progress__fill" id="pvFill"></div>
+        </div>
+        <div class="tp-progress__knob" id="pvKnob" hidden></div>
+      </div>
+      <div class="tp-time">
+        <span id="pvCur">0:00</span>
+        <span id="pvDur">0:00</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 扫码登录 ──────────────────────────────────────────────────────── -->
+<div class="tp-modal" id="qrOv" hidden>
+  <div class="tp-modal__box">
+    <div class="tp-card__title">扫码登录 B站</div>
+    <div class="qr-img" id="qrImg"><span class="tp-spin"></span></div>
+    <div class="tp-sm tp-dim" id="qrStatus">加载中…</div>
+    <button class="tp-btn" id="qrClose">关闭</button>
+  </div>
+</div>
+
+<audio id="pvAudio" crossorigin="anonymous"></audio>
+
+<script type="module">
+import { el, replace, clear, fmtTime, fmtCount, $, $$ } from '/js/core/dom.js';
+import { startReporting, bindPanel, log } from '/js/core/log.js';
+import { getJSON, postJSON, ApiError, showVersionBadge } from '/js/core/api.js';
+import { toast, toastOk, toastWarn, toastDanger, confirmBox } from '/js/core/toast.js';
+import { AudioClock } from '/js/core/clock.js';
+import { FrameStream, sizeCanvas } from '/js/core/frames.js';
+import { MediaCtl } from '/js/core/mediactl.js';
+
+/* ============================================================================
+   频道定义
+   ----------------------------------------------------------------------------
+   keywords 轮换 + 每词只取前 2 页 —— B站搜索接口限流很凶（实测连发 8 个请求
+   被拒 4 个），所以：
+     · 同一 (关键词, 页码) 组合只请求一次，结果缓存
+     · 渲染成功后延迟预取下一组，让"再来一批"看起来是秒出
+     · 失败时最多试 5 组，组间停 700ms 给接口喘口气
+     · 全部失败则退回内置真实 BV 列表，保证不白屏
+   ============================================================================ */
+
+const TOPIC_NOISE = /助眠|催眠|黑屏|纯音频|音频纯享|reaction/i;
+const TOPIC_MIN_SEC = 180;
+
+// 音乐频道的搜索结果结构和"作品类"完全不同：主体是超长歌单，混进大量教学/听力。
+// 单独一套规则：噪声词更宽，时长下限反而更松（单曲 3~5 分钟是正常的）。
+const MUSIC_NOISE = /助眠|催眠|儿歌|早教|教学|教程|课程|听力|讲解|乐理|考级|扒谱|入门|reaction|鬼畜/i;
+const MUSIC_MIN_SEC = 120;
+
+const TOPICS = {
+  xiren: {
+    name: '喜人', icon: '🎭',
+    keywords: ['喜人奇妙夜 纯享', '一年一度喜剧大赛 纯享', '喜人奇妙夜 作品', '一喜 二喜 纯享',
+               '喜剧大赛 经典作品', '喜人 小品 纯享', '喜人奇妙夜 合集', '一年一度喜剧大赛 合集'],
+    fallback: [
+      { bv: 'BV1x8mMBQESS', title: '《少爷和我》（一喜）' },
+      { bv: 'BV1jgwyzGEHT', title: '《好兄台》（一喜）' },
+      { bv: 'BV1CvDqYGENm', title: '《妈呀！新老师》（一喜）' },
+      { bv: 'BV1paTNzHEzS', title: '蒋龙 · 张弛 三部作品（一喜）' },
+      { bv: 'BV1r8TWziEME', title: '江东鸣三部曲（一喜）' },
+      { bv: 'BV1SxUDB7Eyo', title: '《再见老张》完整纯享 + 幕后（二喜）' },
+      { bv: 'BV1GZFuzvE19', title: '《再见老张》（二喜）' },
+      { bv: 'BV1y7fmBpEG4', title: '《财神来敲我家门》（二喜）' },
+      { bv: 'BV1ShP4zDEvF', title: '《突突突突突围》（二喜）' },
+      { bv: 'BV17gPwzFE18', title: '《排练疯云》（二喜）' },
+      { bv: 'BV1ZyzRBEESz', title: '《虎父无犬子》（二喜）' },
+      { bv: 'BV1q4421Z7TH', title: '闫佩伦 14 个参演作品纯享版' },
+      { bv: 'BV1SnN7z8EaG', title: '喜人们的高光时刻（上）' },
+      { bv: 'BV1M3HxztEEp', title: '一喜二喜歌舞大乱炖' },
+    ],
+  },
+  yts: {
+    name: '脱口秀', icon: '🎤',
+    keywords: ['脱口秀和Ta的朋友们 纯享', '单口喜剧 纯享', '脱口秀 纯享合集', '脱口秀大会 纯享',
+               '喜剧之王单口季 纯享', '脱口秀 专场', '脱口秀 选手合集', '单口喜剧 专场'],
+    fallback: [
+      { bv: 'BV1A8hM6CETF', title: '【纯享合集】脱口秀和朋友们' },
+      { bv: 'BV1SC9ZB2ERk', title: '漫才兄弟 · 和Ta的朋友们1 纯享合集' },
+      { bv: 'BV1MER4BtECB', title: '呼兰 · 和Ta的朋友们1 纯享合集' },
+      { bv: 'BV1H7VR64E42', title: '何广智 · 和Ta的朋友们1 纯享合集' },
+      { bv: 'BV1zw5t61EKv', title: '毛豆 · 和Ta的朋友们1 纯享合集' },
+      { bv: 'BV15aFQzpEfj', title: '小帕 · 和Ta的朋友们2 纯享合集' },
+      { bv: 'BV1VxhN6SE68', title: '【全季纯享】黑灯' },
+      { bv: 'BV1uY4d6GEEA', title: '【全季纯享】翟佳宁' },
+      { bv: 'BV1CqE36HErG', title: '【全季纯享】刘旸' },
+      { bv: 'BV1v9PAeMEiu', title: '【付航脱口秀】一小时过瘾版' },
+      { bv: 'BV1mVKf6FEiF', title: '毛豆 · 脱口秀大会5 总季军' },
+      { bv: 'BV1TrLH6UEN4', title: '黑灯：黑暗不可怕，人心狭隘才最可怕' },
+    ],
+  },
+  music: {
+    name: '音乐', icon: '🎵',
+    noise: MUSIC_NOISE, minSec: MUSIC_MIN_SEC,
+    keywords: ['车载音乐 无损', '华语经典老歌', '粤语金曲', '怀旧金曲',
+               '无损音质 合集', '纯音乐 钢琴', '民谣 精选', '英文歌 精选'],
+    fallback: [
+      { bv: 'BV1g6WGeBExb', title: '100首热门车载DJ · 一键提神不犯困' },
+      { bv: 'BV17o4y1K7m1', title: '适合开长途车听的 100 首中文流行（6 小时）' },
+      { bv: 'BV1riYF6WEja', title: '精选 33 首歌 · 长途最适合收听的歌单' },
+      { bv: 'BV1dFhb69E9B', title: '宝丽金：环球 50 周年经典金曲（Hi-Res）' },
+      { bv: 'BV1aSV66MEjf', title: '盘点华语经典歌曲 100 首（Hi-Res 无损）' },
+      { bv: 'BV1ws4y1j7jY', title: '70 / 80 / 90 年代经典老歌大放送' },
+      { bv: 'BV1dY41167yu', title: '粤语金曲精选 100 首（无损音质）' },
+      { bv: 'BV1xpQKBpEW7', title: '50 首经典钢琴曲 · 古典钢琴（3 小时）' },
+      { bv: 'BV1sM4y1z7G8', title: '50 首经典英文歌曲合集（3 小时）' },
+      { bv: 'BV1y1aw6wEpn', title: '史上最佳民谣 · 20 首经典民谣与乡村金曲' },
+      { bv: 'BV1abao6aEGq', title: '周杰伦歌曲音乐合集（Hi-Res 无损）' },
+      { bv: 'BV1W7411C7wC', title: 'Beyond 高清原版 MV（DVD）' },
+    ],
+  },
+};
+
+/* 画面档位：宽高必须偶数（yuv420p 要求，奇数会让 ffmpeg 输出 0 字节）。
+   实测 360x203 → 0 字节，360x202 → 正常。 */
+const QUALITIES = [
+  { w: 960, h: 540, fps: 15, name: '540p' },
+  { w: 640, h: 360, fps: 15, name: '360p' },
+  { w: 480, h: 270, fps: 12, name: '270p' },
+  { w: 360, h: 202, fps: 10, name: '202p' },
+];
+
+/* ============================================================================
+   状态
+   ============================================================================ */
+
+const S = {
+  mode: 'hot',
+  q: '',                       // 搜索词
+  page: 1,
+  topic: null,                 // 当前频道 key
+  topicCache: new Map(),       // 'kw|page' -> {list, kw, page}
+  topicIdx: 0,                 // 下一个关键词下标
+  prefetchTimer: 0,
+  seen: new Set(),             // 已展示过的 bvid（用于"再来一批"去重）
+  currentList: null,           // 分页上下文
+  popularPage: 0,
+  recFresh: 1,
+  qi: 0,
+  loggedIn: false,
+};
+
+let pv = null;                 // 播放器状态
+
+/* ============================================================================
+   列表渲染
+   ============================================================================ */
+
+const gridWrap = $('#gridWrap');
+
+function showLoading(text = '加载中…') {
+  replace(gridWrap, [el('div', { class: 'tp-empty' }, [el('span', { class: 'tp-spin' }), ' ' + text])]);
+}
+
+function showError(msg, retry) {
+  replace(gridWrap, [el('div', { class: 'tp-empty' }, [
+    el('div', { class: 'tp-error', text: msg }),
+    retry ? el('button', { class: 'tp-btn tp-btn--primary', text: '重试', onClick: retry }) : null,
+  ])]);
+}
+
+function showEmpty(msg) {
+  replace(gridWrap, [el('div', { class: 'tp-empty', text: msg })]);
+}
+
+/** 视频卡片。所有文本走 textContent，不用 innerHTML（B站标题可能含 < 或 &）。 */
+function videoCard(v) {
+  const bv = v.bvid || v.bv;
+  const thumb = v.pic
+    ? el('img', { src: `/api/bilibili/img-proxy?url=${encodeURIComponent(v.pic)}`, loading: 'lazy', alt: '' })
+    : null;
+
+  return el('div', {
+    class: 'tp-tile',
+    onClick: () => openPlayer(bv, v.title || '未命名'),
+  }, [
+    el('div', { class: 'tp-tile__thumb' }, [
+      thumb,
+      v.duration ? el('span', { class: 'tp-tile__badge', text: fmtTime(v.duration) }) : null,
+    ]),
+    el('div', { class: 'tp-tile__body' }, [
+      el('div', { class: 'tp-tile__title', text: v.title || '未命名' }),
+      el('div', { class: 'tp-tile__meta', text: [v.author, v.play ? fmtCount(v.play) + '播放' : ''].filter(Boolean).join(' · ') }),
+    ]),
+  ]);
+}
+
+function renderList(items, { title, sub, kws } = {}) {
+  const frag = [];
+
+  if (title || kws) {
+    frag.push(el('div', { class: 'list-head' }, [
+      el('div', { class: 'list-head__title', text: title || '' }),
+      el('div', { class: 'list-head__sub', text: sub || '' }),
+      el('span', { class: 'tp-grow' }),
+    ]));
+  }
+
+  if (kws && kws.length) {
+    frag.push(el('div', { class: 'kw-row' }, kws.map((k) =>
+      el('button', { class: 'kw-btn', text: '🔍 ' + k, onClick: () => doSearch(k) })
+    )));
+  }
+
+  if (!items.length) {
+    frag.push(el('div', { class: 'tp-empty', text: '没有内容' }));
+  } else {
+    frag.push(el('div', { class: 'tp-grid' }, items.map(videoCard)));
+  }
+
+  replace(gridWrap, frag);
+  gridWrap.scrollTop = 0;
+}
+
+/* ============================================================================
+   模式切换
+   ============================================================================ */
+
+function setMode(mode) {
+  S.mode = mode;
+  $$('.mode-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.mode === mode));
+}
+
+async function switchMode(mode) {
+  setMode(mode);
+  S.page = 1;
+  S.currentList = null;
+
+  try {
+    switch (mode) {
+      case 'hot':        return await loadPopular();
+      case 'rec':        return await requireLogin(() => loadRecommend());
+      case 'following':  return await requireLogin(() => loadFollowings());
+      case 'fav':        return await requireLogin(() => loadFavFolders());
+      case 'xiren':
+      case 'yts':
+      case 'music':      return await loadTopic(mode);
+    }
+  } catch (e) {
+    showError(e.message || '加载失败', () => switchMode(mode));
+  }
+}
+
+async function requireLogin(fn) {
+  await checkLogin();
+  if (!S.loggedIn) {
+    toastWarn('该功能需要先登录 B站');
+    openQR();
+    return;
+  }
+  return fn();
+}
+
+/* ── 搜索 ─────────────────────────────────────────────────────────────── */
+
+async function doSearch(kw) {
+  const q = (kw ?? $('#searchInput').value ?? '').trim();
+  if (!q) return;
+  $('#searchInput').value = q;
+  S.q = q;
+  S.topic = null;
+  setMode('');
+  showLoading(`搜索「${q}」…`);
+  try {
+    const d = await getJSON(`/api/bilibili/search${qsOf({ keyword: q })}`, { timeout: 25000 });
+    const list = (d.results || []).map(normVideo);
+    renderList(list, { title: `搜索：${q}`, sub: `${list.length} 个结果` });
+  } catch (e) {
+    showError(e.message || '搜索失败', () => doSearch(q));
+  }
+}
+
+const qsOf = (o) => {
+  const s = Object.entries(o).filter(([, v]) => v !== null && v !== undefined && v !== '')
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+  return s ? '?' + s : '';
+};
+
+/** 统一视频字段（不同接口字段名不同）。 */
+function normVideo(v) {
+  return {
+    bvid: v.bvid || v.bv,
+    title: v.title,
+    pic: v.pic || v.thumbnail || '',
+    author: v.author || v.owner?.name || v.uploader || '',
+    play: v.play || v.view || 0,
+    duration: v.duration || v.length || 0,
+  };
+}
+
+/* ── 热门 / 推荐 ──────────────────────────────────────────────────────── */
+
+async function loadPopular() {
+  showLoading('加载热门…');
+  // 热门每次随机一页，避免每次点都看到同样的内容
+  const page = 1 + Math.floor(Math.random() * 3);
+  const d = await getJSON(`/api/bilibili/popular${qsOf({ page })}`, { timeout: 25000 });
+  const list = (d.list || []).map(normVideo);
+  renderList(list, { title: '🔥 热门', sub: `第 ${page} 页 · ${list.length} 个` });
+}
+
+async function loadRecommend() {
+  showLoading('加载推荐…');
+  const d = await getJSON(`/api/bilibili/recommend${qsOf({ fresh_idx: S.recFresh })}`, { timeout: 25000 });
+  S.recFresh = (d.freshIdx || S.recFresh) + 1;
+  const list = (d.list || []).map(normVideo);
+  renderList(list, { title: '✨ 推荐', sub: `${list.length} 个` });
+}
+
+/* ── 关注 / 收藏 ──────────────────────────────────────────────────────── */
+
+async function loadFollowings() {
+  showLoading('加载关注列表…');
+  const d = await getJSON('/api/bilibili/followings?pn=1', { timeout: 25000 });
+  const list = d.list || [];
+
+  replace(gridWrap, [
+    el('div', { class: 'list-head' }, [
+      el('div', { class: 'list-head__title', text: '❤️ 我的关注' }),
+      el('div', { class: 'list-head__sub', text: `${list.length} 个 UP` }),
+    ]),
+    el('div', { class: 'tp-grid' }, list.map((u) => el('div', {
+      class: 'ucard',
+      onClick: () => loadUpVideos(u.mid, u.name, 1),
+    }, [
+      u.face ? el('img', { src: `/api/bilibili/img-proxy?url=${encodeURIComponent(u.face)}`, loading: 'lazy', alt: '' }) : el('img', { alt: '' }),
+      el('div', { class: 'tp-grow' }, [
+        el('div', { class: 'ucard__name', text: u.name || '未知UP' }),
+        el('div', { class: 'ucard__sign', text: u.sign || '' }),
+      ]),
+    ]))),
+  ]);
+}
+
+async function loadUpVideos(mid, name, page) {
+  showLoading(`加载 ${name} 的视频…`);
+  const d = await getJSON(`/api/bilibili/following/videos${qsOf({ uid: mid, pn: page })}`, { timeout: 25000 });
+  const list = (d.list || []).map(normVideo);
+  S.currentList = { type: 'up', mid, name, page };
+  renderWithPager(list, { title: `UP：${name}`, sub: `第 ${page} 页` }, d.total);
+}
+
+async function loadFavFolders() {
+  showLoading('加载收藏夹…');
+  const d = await getJSON('/api/bilibili/favorites', { timeout: 25000 });
+  const list = d.list || [];
+
+  replace(gridWrap, [
+    el('div', { class: 'list-head' }, [
+      el('div', { class: 'list-head__title', text: '⭐ 我的收藏' }),
+      el('div', { class: 'list-head__sub', text: `${list.length} 个收藏夹` }),
+    ]),
+    el('div', { class: 'tp-grid' }, list.map((f) => el('div', {
+      class: 'tp-tile',
+      // 注意字段名：服务端返回 { fid, title, media_count }。
+      // 曾经读成 f.id / f.count（都不存在）→ 点击时 fid=undefined，
+      // 请求发不出去，表现为"看不到收藏的节目"。
+      onClick: () => loadFavVideos(f.fid ?? f.id, f.title, 1),
+    }, [
+      el('div', { class: 'tp-tile__body' }, [
+        el('div', { class: 'tp-tile__title', text: f.title || '未命名收藏夹' }),
+        el('div', { class: 'tp-tile__meta', text: `${f.media_count ?? f.count ?? 0} 个视频` }),
+      ]),
+    ]))),
+  ]);
+}
+
+async function loadFavVideos(fid, title, page) {
+  showLoading(`加载「${title}」…`);
+  const d = await getJSON(`/api/bilibili/favorites/videos${qsOf({ fid, pn: page })}`, { timeout: 25000 });
+  const list = (d.list || []).map(normVideo);
+  S.currentList = { type: 'fav', fid, title, page };
+  renderWithPager(list, { title: `⭐ ${title}`, sub: `第 ${page} 页` }, d.total);
+}
+
+function renderWithPager(items, head, total) {
+  const frag = [
+    el('div', { class: 'list-head' }, [
+      el('button', { class: 'tp-btn', text: '← 返回', onClick: () => switchMode(S.mode) }),
+      el('div', { class: 'list-head__title', text: head.title }),
+      el('div', { class: 'list-head__sub', text: head.sub }),
+    ]),
+  ];
+
+  if (items.length) frag.push(el('div', { class: 'tp-grid' }, items.map(videoCard)));
+  else frag.push(el('div', { class: 'tp-empty', text: '这一页没有内容' }));
+
+  const page = S.currentList?.page || 1;
+  const hasMore = !total || page * 30 < total;
+  frag.push(el('div', { class: 'pager' }, [
+    el('button', { class: 'tp-btn', text: '上一页', disabled: page <= 1, onClick: () => pagerGo(page - 1) }),
+    el('span', { class: 'pager__info', text: `第 ${page} 页${total ? ` / 共 ${Math.ceil(total / 30)} 页` : ''}` }),
+    el('button', { class: 'tp-btn', text: '下一页', disabled: !hasMore, onClick: () => pagerGo(page + 1) }),
+  ]));
+
+  replace(gridWrap, frag);
+  gridWrap.scrollTop = 0;
+}
+
+function pagerGo(page) {
+  const c = S.currentList;
+  if (!c || page < 1) return;
+  if (c.type === 'up') loadUpVideos(c.mid, c.name, page);
+  else if (c.type === 'fav') loadFavVideos(c.fid, c.title, page);
+}
+
+/* ============================================================================
+   频道（喜人 / 脱口秀 / 音乐）
+   ============================================================================ */
+
+function topicCacheGet(kw, page) { return S.topicCache.get(`${kw}|${page}`); }
+function topicCacheSet(kw, page, val) { S.topicCache.set(`${kw}|${page}`, val); }
+
+/** 关键词 + 页码轮换。页码只用 1 和 2 —— 实测第 3 页会报错。 */
+function nextQuery() {
+  const t = TOPICS[S.topic];
+  const kw = t.keywords[S.topicIdx % t.keywords.length];
+  const page = (S.topicIdx % 2) + 1;
+  S.topicIdx++;
+  return { kw, page };
+}
+
+/** 过滤：噪声词 + 时长下限 + 去重。必须保证不返回空列表。 */
+function pick(list, t) {
+  const noise = t.noise || TOPIC_NOISE;
+  const minSec = t.minSec || TOPIC_MIN_SEC;
+  const out = [];
+  for (const v of list) {
+    const title = String(v.title || '');
+    if (noise.test(title)) continue;
+    if (v.duration && v.duration < minSec) continue;
+    const id = v.bvid || v.bv;
+    if (!id) continue;
+    if (S.seen.has(id)) continue;
+    out.push(v);
+    if (out.length >= 24) break;
+  }
+  return out;
+}
+
+async function loadTopic(topicKey) {
+  S.topic = topicKey;
+  S.topicIdx = 0;
+  setMode(topicKey);
+  showLoading('加载中…');
+  await loadTopicBatch();
+}
+
+async function loadTopicBatch() {
+  const t = TOPICS[S.topic];
+  showLoading(`${t.icon} ${t.name} · 加载中…`);
+
+  let lastGood = null;
+
+  // 最多试 5 组；组间停一下，给 B站 接口喘口气（它限流很凶）
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { kw, page } = nextQuery();
+
+    let data = topicCacheGet(kw, page);
+    if (!data) {
+      try {
+        data = await getJSON(`/api/bilibili/search${qsOf({ keyword: kw, page })}`, { timeout: 25000 });
+        topicCacheSet(kw, page, data);
+      } catch (e) {
+        log('topic-fail', { kw, page, msg: e.message });
+        await new Promise((r) => setTimeout(r, 700));
+        continue;
+      }
+    }
+
+    const picked = pick(data.results || [], t);
+    if (picked.length >= 4) {
+      picked.forEach((v) => S.seen.add(v.bvid || v.bv));
+      renderTopic(picked, kw, page, t);
+      schedulePrefetch();
+      return;
+    }
+    lastGood = lastGood || { data, kw, page };
+    await new Promise((r) => setTimeout(r, 700));
+  }
+
+  // 全部失败：退回内置真实 BV 列表，保证不白屏
+  const fb = t.fallback.filter((v) => !S.seen.has(v.bv)).slice(0, 24);
+  if (fb.length) {
+    fb.forEach((v) => S.seen.add(v.bv));
+    renderList(fb.map(normVideo), {
+      title: `${t.icon} ${t.name}`,
+      sub: '接口受限，使用离线列表',
+    });
+    log('topic-fallback', t.name);
+    return;
+  }
+
+  // 连兜底都看完了：清空已看记录重来
+  S.seen.clear();
+  renderList(t.fallback.map(normVideo), { title: `${t.icon} ${t.name}`, sub: '已循环一轮' });
+}
+
+function renderTopic(list, kw, page, t) {
+  renderList(list, {
+    title: `${t.icon} ${t.name}`,
+    sub: `「${kw}」第 ${page} 页 · ${list.length} 个`,
+    kws: [kw],
+  });
+}
+
+/** 渲染成功后延迟预取下一组，让"再来一批"看起来是秒出。 */
+function schedulePrefetch() {
+  clearTimeout(S.prefetchTimer);
+  S.prefetchTimer = setTimeout(async () => {
+    const t = TOPICS[S.topic];
+    if (!t) return;
+    const kw = t.keywords[S.topicIdx % t.keywords.length];
+    const page = (S.topicIdx % 2) + 1;
+    if (topicCacheGet(kw, page)) return;
+    try {
+      const d = await getJSON(`/api/bilibili/search${qsOf({ keyword: kw, page })}`, { timeout: 25000 });
+      topicCacheSet(kw, page, d);
+      log('topic-prefetch-ok', { kw, page });
+    } catch { /* 预取失败无所谓 */ }
+  }, 1200);
+}
+
+/* ============================================================================
+   播放器
+   ============================================================================ */
+
+function setChip(node, text, cls) {
+  node.textContent = text;
+  node.hidden = !text;
+  if (cls !== undefined) node.className = 'tp-chip' + (cls ? ' ' + cls : '');
+}
+
+function openPlayer(bv, title) {
+  if (!bv) { toastDanger('缺少视频 ID'); return; }
+
+  const q = QUALITIES[S.qi];
+  const canvas = $('#pvCanvas');
+  sizeCanvas(canvas, q, false);
+
+  const audio = $('#pvAudio');
+  audio.src = `/api/bilibili/audio-file/${encodeURIComponent(bv)}`;
+
+  $('#pvTitle').textContent = title;
+  $('#playerOv').hidden = false;
+  $('#pvLoad').hidden = false;
+  $('#pvLoadText').textContent = '连接中…';
+  setChip($('#pvMode'), `◆ 帧流 · ${q.name}`, 'tp-chip--accent');
+
+  const clock = new AudioClock(audio).attach();
+
+  // 时长：优先服务端 ffprobe
+  getJSON(`/api/bilibili/duration/${encodeURIComponent(bv)}`, { timeout: 20000 })
+    .then((d) => { if (d && d.duration) clock.setDuration(d.duration); })
+    .catch(() => {});
+
+  const stream = new FrameStream({
+    canvas, audio,
+    url: `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/frames`,
+    query: { bili: bv, fps: q.fps, w: q.w, h: q.h },
+    label: 'bili:' + bv,
+    syncLag: 0.12,
+    ownLoop: true,
+    onClose: (ev, frames) => {
+      if (frames === 0) {
+        $('#pvLoad').hidden = false;
+        $('#pvLoadText').textContent = '画面未就绪，正在重连…';
+      }
+    },
+  });
+
+  pv = { bv, title, stream, clock, qi: S.qi, dragging: false, started: false };
+
+  stream.start(0);
+
+  audio.play()
+    .then(() => { pv.started = true; $('#pvLoad').hidden = true; updatePvPlayBtn(); })
+    .catch(() => {
+      $('#pvLoadText').textContent = '点此开始播放';
+      $('#pvLoad').style.cursor = 'pointer';
+      $('#pvLoad').onclick = () => {
+        $('#pvLoad').onclick = null;
+        $('#pvLoad').style.cursor = '';
+        audio.play().then(() => { pv.started = true; $('#pvLoad').hidden = true; updatePvPlayBtn(); }).catch(() => {});
+      };
+    });
+
+  clock.watch({
+    onFail: (why) => {
+      log('bili-audio-fail', why);
+      if (why === 'ended') { closePlayer(); return; }
+      const pos = clock.position() || 0;
+      audio.src = `/api/bilibili/audio-file/${encodeURIComponent(bv)}?t=${Date.now()}`;
+      const onMeta = () => {
+        audio.removeEventListener('loadedmetadata', onMeta);
+        try { audio.currentTime = pos; } catch {}
+        audio.play().catch(() => {});
+      };
+      audio.addEventListener('loadedmetadata', onMeta);
+    },
+  });
+
+  MediaCtl.setMeta({ title, artist: 'B站', album: '在线播放', artwork: MediaCtl.cover(title) });
+  updatePvPlayBtn();
+  startPvProgress();
+  log('bili-open', { bv, title });
+}
+
+function closePlayer() {
+  stopPvProgress();
+  if (pv) {
+    try { pv.stream.destroy(); } catch {}
+    try { pv.clock.detach(); } catch {}
+    pv = null;
+  }
+  const audio = $('#pvAudio');
+  try { audio.pause(); audio.removeAttribute('src'); audio.load(); } catch {}
+  $('#playerOv').hidden = true;
+  $('#pvLoad').hidden = false;
+  $('#pvLoad').style.cursor = '';
+  $('#pvLoad').onclick = null;
+  // 通知服务端停掉可能存在的 HLS 会话
+  fetch(`/api/bilibili/stream/stop/${encodeURIComponent(S.lastBv || '')}`).catch(() => {});
+}
+
+function updatePvPlayBtn() {
+  const audio = $('#pvAudio');
+  $('#pvPlay').textContent = audio.paused ? '▶' : '⏸';
+}
+
+let pvTimer = 0;
+function startPvProgress() {
+  stopPvProgress();
+  pvTimer = setInterval(() => {
+    if (!pv) return;
+    const audio = $('#pvAudio');
+    const dur = (Number.isFinite(audio.duration) && audio.duration > 0)
+      ? audio.duration : (pv.clock.duration() || 0);
+    const pos = pv.clock.position() || 0;
+
+    if (dur > 0 && !pv.dragging) {
+      const f = Math.max(0, Math.min(1, pos / dur));
+      $('#pvFill').style.width = (f * 100) + '%';
+      $('#pvKnob').style.left = (f * 100) + '%';
+      $('#pvCur').textContent = fmtTime(pos);
+    }
+    $('#pvDur').textContent = fmtTime(dur);
+
+    // 缓冲
+    const last = pv.stream.buffer.length ? pv.stream.buffer[pv.stream.buffer.length - 1].t : 0;
+    if (dur > 0) $('#pvBuffered').style.width = Math.min(100, (last / dur) * 100) + '%';
+
+    setChip($('#pvBuf'), pv.stream.statsText(), '');
+    MediaCtl.setPosition(dur, pos, 1);
+  }, 500);
+}
+
+function stopPvProgress() { clearInterval(pvTimer); pvTimer = 0; }
+
+/* 进度条拖动 */
+const pvProgress = $('#pvProgress');
+function pvFrac(e) {
+  const r = pvProgress.getBoundingClientRect();
+  return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+}
+pvProgress.addEventListener('pointerdown', (e) => {
+  if (!pv) return;
+  pv.dragging = true;
+  pvProgress.setPointerCapture(e.pointerId);
+  $('#pvKnob').hidden = false;
+  pvPreview(pvFrac(e));
+});
+pvProgress.addEventListener('pointermove', (e) => { if (pv && pv.dragging) pvPreview(pvFrac(e)); });
+pvProgress.addEventListener('pointerup', (e) => {
+  if (!pv || !pv.dragging) return;
+  pv.dragging = false;
+  $('#pvKnob').hidden = true;
+  const audio = $('#pvAudio');
+  const dur = Number.isFinite(audio.duration) ? audio.duration : pv.clock.duration();
+  if (dur > 0) {
+    const t = pvFrac(e) * dur;
+    audio.currentTime = t;
+    pv.stream.seek(t);
+    pv.clock.resync();
+  }
+});
+pvProgress.addEventListener('pointercancel', () => { if (pv) { pv.dragging = false; $('#pvKnob').hidden = true; } });
+
+function pvPreview(f) {
+  const audio = $('#pvAudio');
+  const dur = Number.isFinite(audio.duration) ? audio.duration : (pv ? pv.clock.duration() : 0);
+  $('#pvFill').style.width = (f * 100) + '%';
+  $('#pvKnob').style.left = (f * 100) + '%';
+  if (dur) $('#pvCur').textContent = fmtTime(f * dur);
+}
+
+/* ============================================================================
+   扫码登录
+   ============================================================================ */
+
+let qrTimer = 0;
+
+async function checkLogin() {
+  try {
+    const d = await getJSON('/api/bilibili/login-status', { timeout: 8000 });
+    S.loggedIn = !!d.loggedIn;
+  } catch { S.loggedIn = false; }
+  $('#loginBtn').textContent = S.loggedIn ? '已登录 ✓' : '扫码登录';
+  return S.loggedIn;
+}
+
+/**
+ * 打开扫码登录。
+ *
+ * 关键：服务端 /qr/meta 与 /qr/image 现在共用**同一个**二维码缓存
+ * （之前各生成一个，导致"扫的码"与"轮询的 key"不一致 → 扫码没反应）。
+ * 前端只需取一次 meta，图片用同一份缓存渲染即可。
+ *
+ * 过期处理：自动重新获取（带 refresh=1 强制刷新），无需用户关闭重开。
+ */
+async function openQR() {
+  $('#qrOv').hidden = false;
+  clearInterval(qrTimer);
+
+  /** 取（或刷新）二维码并开始轮询。 */
+  async function loadQR(force) {
+    $('#qrStatus').textContent = '加载中…';
+    replace($('#qrImg'), [el('span', { class: 'tp-spin' })]);
+
+    const meta = await getJSON(
+      `/api/bilibili/qr/meta${force ? '?refresh=1' : ''}`, { timeout: 15000 }
+    );
+    replace($('#qrImg'), [
+      el('img', { src: `/api/bilibili/qr/image?t=${Date.now()}`, alt: '二维码' }),
+    ]);
+    $('#qrStatus').textContent = '请用 B站 App 扫码';
+
+    clearInterval(qrTimer);
+    qrTimer = setInterval(async () => {
+      try {
+        const d = await getJSON(
+          `/api/bilibili/qr/poll${qsOf({ key: meta.qrcode_key })}`, { timeout: 15000 }
+        );
+        if (d.status === 'scanned') { $('#qrStatus').textContent = '已扫码，请在手机确认'; return; }
+        if (d.status === 'confirmed') { $('#qrStatus').textContent = '已确认，正在登录…'; return; }
+        if (d.status === 'success') {
+          clearInterval(qrTimer);
+          $('#qrStatus').textContent = '✓ 登录成功';
+          await checkLogin();
+          setTimeout(() => { $('#qrOv').hidden = true; toastOk('登录成功'); }, 1200);
+          return;
+        }
+        if (d.status === 'expired') {
+          // 自动换一张新码，用户无需操作
+          clearInterval(qrTimer);
+          $('#qrStatus').textContent = '二维码已过期，正在自动刷新…';
+          log('qr-expired-refresh');
+          setTimeout(() => { loadQR(true).catch(() => {}); }, 800);
+        }
+      } catch (e) {
+        // 单次轮询失败不致命，继续轮询
+        log('qr-poll-error', e.message);
+      }
+    }, 2000);
+  }
+
+  try {
+    await loadQR(false);
+  } catch (e) {
+    $('#qrStatus').textContent = '二维码加载失败：' + e.message;
+  }
+}
+
+function closeQR() {
+  clearInterval(qrTimer);
+  $('#qrOv').hidden = true;
+}
+
+/* ============================================================================
+   交互绑定
+   ============================================================================ */
+
+$$('.mode-btn').forEach((b) => b.addEventListener('click', () => switchMode(b.dataset.mode)));
+$('#searchBtn').addEventListener('click', () => doSearch());
+$('#searchInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
+
+$('#refreshBtn').addEventListener('click', () => {
+  if (TOPICS[S.mode]) { loadTopicBatch(); return; }
+  switchMode(S.mode || 'hot');
+});
+
+$('#loginBtn').addEventListener('click', async () => {
+  await checkLogin();
+  if (S.loggedIn) {
+    const yes = await confirmBox('已登录。要退出登录吗？', { okText: '退出登录', danger: true });
+    if (!yes) return;
+    try { await postJSON('/api/bilibili/logout'); await checkLogin(); toastOk('已退出登录'); }
+    catch (e) { toastDanger(e.message); }
+  } else {
+    openQR();
+  }
+});
+
+$('#qrClose').addEventListener('click', closeQR);
+
+$('#cleanupBtn').addEventListener('click', async () => {
+  const yes = await confirmBox('清理服务端所有 ffmpeg 进程？\n（正在播放的内容会中断）', { okText: '清理', danger: true });
+  if (!yes) return;
+  try {
+    const d = await postJSON('/api/cleanup');
+    toastOk(`已清理 ${d.killedBefore ?? 0} 个进程`);
+  } catch (e) { toastDanger(e.message); }
+});
+
+$('#pvClose').addEventListener('click', closePlayer);
+$('#pvPlay').addEventListener('click', () => {
+  const audio = $('#pvAudio');
+  if (audio.paused) audio.play().catch(() => {}); else audio.pause();
+  updatePvPlayBtn();
+});
+$('#pvFs').addEventListener('click', async () => {
+  const appEl = $('#playerOv');
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await appEl.requestFullscreen();
+  } catch {
+    appEl.classList.toggle('is-fs');
+  }
+});
+$('#pvMockD').addEventListener('click', () => {
+  if (!pv) return;
+  S.qi = Math.min(QUALITIES.length - 1, S.qi + 1);
+  const q = QUALITIES[S.qi];
+  setChip($('#pvMode'), `◆ 帧流 · ${q.name}`, 'tp-chip--accent');
+  const pos = pv.clock.position() || 0;
+  pv.stream.stop(true);
+  const canvas = $('#pvCanvas');
+  sizeCanvas(canvas, q, false);
+  pv.stream.o.query.fps = q.fps;
+  pv.stream.o.query.w = q.w;
+  pv.stream.o.query.h = q.h;
+  pv.stream.qualityIdx = S.qi;
+  pv.stream.start(pos);
+  toast(`画质：${q.name}`);
+});
+
+// 媒体键 / 方向盘
+MediaCtl.bind({
+  play: () => { const a = $('#pvAudio'); if (a.paused) a.play().catch(() => {}); updatePvPlayBtn(); },
+  pause: () => { $('#pvAudio').pause(); updatePvPlayBtn(); },
+  toggle: () => { const a = $('#pvAudio'); if (a.paused) a.play().catch(() => {}); else a.pause(); updatePvPlayBtn(); },
+  stop: closePlayer,
+  seekBy: (d) => {
+    if (!pv) return;
+    const a = $('#pvAudio');
+    const dur = Number.isFinite(a.duration) ? a.duration : pv.clock.duration();
+    const t = Math.max(0, Math.min(dur || 0, (pv.clock.position() || 0) + d));
+    a.currentTime = t; pv.stream.seek(t); pv.clock.resync();
+  },
+  isPlaying: () => !$('#pvAudio').paused,
+});
+
+document.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.key === 'Escape' && pv) closePlayer();
+  if (e.key === ' ' && pv) { e.preventDefault(); $('#pvPlay').click(); }
+});
+
+window.addEventListener('pagehide', () => { try { closePlayer(); } catch {} });
+
+/* ============================================================================
+   启动
+   ============================================================================ */
+
+startReporting();
+bindPanel();
+checkLogin();
+switchMode('hot');
+showVersionBadge();
+log('bili-ready');
+</script>
+</body>
+</html>

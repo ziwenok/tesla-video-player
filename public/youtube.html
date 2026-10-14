@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<title>YouTube · Tesla</title>
+
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/app.css">
+<script src="/js/core/viewport.js"></script>
+
+<style>
+  /* 与 bili.html 保持同一套结构，视觉完全一致 */
+  .side-head { display: flex; flex-direction: column; align-items: flex-start; gap: var(--tp-sp-3); }
+  .grid-wrap { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--tp-sp-5); }
+  .mode-btn { justify-content: flex-start; }
+
+  .list-head { display: flex; align-items: center; gap: var(--tp-sp-3); margin-bottom: var(--tp-sp-4); flex-wrap: wrap; }
+  .list-head__title { font-size: var(--tp-fs-md); font-weight: 600; color: var(--tp-text); }
+  .list-head__sub { font-size: var(--tp-fs-sm); color: var(--tp-dim); }
+
+  .kw-row { display: flex; gap: var(--tp-sp-2); flex-wrap: wrap; margin-bottom: var(--tp-sp-4); }
+  .kw-btn {
+    padding: 6px 12px; background: var(--tp-surface-2); border: 1px solid var(--tp-line-2);
+    border-radius: var(--tp-r-pill); color: var(--tp-text-2); font-size: var(--tp-fs-sm); cursor: pointer;
+  }
+  .kw-btn:hover { border-color: var(--tp-accent-line); color: var(--tp-accent); }
+
+  /* YouTube 品牌红：仅用于 logo，主体仍走全站青色系 */
+  .yt-mark { color: #ff0033; font-weight: 700; }
+
+  #playerOv { z-index: var(--tp-z-overlay); }
+  #playerOv .parea { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; position: relative; }
+
+  .pv-top {
+    position: absolute; left: 0; right: 0; top: 0;
+    display: flex; align-items: center; gap: var(--tp-sp-2);
+    padding: var(--tp-sp-3) var(--tp-sp-4);
+    background: linear-gradient(to bottom, rgba(0,0,0,.78), transparent);
+    z-index: 5;
+  }
+  .pv-title { font-size: var(--tp-fs-md); font-weight: 600; color: #fff; flex: 1 1 auto; min-width: 0;
+              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 4px #000; }
+  .pv-status { position: absolute; left: var(--tp-sp-4); top: 64px; z-index: 5; display: flex; gap: var(--tp-sp-2); flex-wrap: wrap; }
+  .pv-bottom {
+    flex: 0 0 auto; background: var(--tp-surface); border-top: 1px solid var(--tp-line);
+    padding: var(--tp-sp-2) var(--tp-sp-4) var(--tp-sp-4);
+    display: flex; flex-direction: column; gap: var(--tp-sp-2);
+  }
+</style>
+</head>
+<body>
+
+<div class="tp-app" id="app">
+
+  <!-- ── 侧栏 ──────────────────────────────────────────────────────── -->
+  <aside class="tp-sidebar">
+    <div class="side-head">
+      <a class="tp-back" href="/">← 返回首页</a>
+      <div class="tp-side-title"><span class="yt-mark">▶</span> YouTube</div>
+    </div>
+
+    <div class="tp-col">
+      <input class="tp-input" id="searchInput" type="text" placeholder="搜索 YouTube…" autocomplete="off">
+      <button class="tp-btn tp-btn--primary" id="searchBtn">搜索</button>
+    </div>
+
+    <div class="tp-side-section">
+      <div class="tp-side-label">浏览</div>
+      <button class="tp-btn tp-btn--ghost mode-btn" data-mode="hot">🔥 热门</button>
+    </div>
+
+    <div class="tp-side-section">
+      <div class="tp-side-label">分类</div>
+      <button class="tp-btn tp-btn--ghost mode-btn" data-mode="mil">🛡️ 军事</button>
+      <button class="tp-btn tp-btn--ghost mode-btn" data-mode="pol">📰 时政</button>
+      <button class="tp-btn tp-btn--ghost mode-btn" data-mode="doc">🎬 纪录片</button>
+      <button class="tp-btn tp-btn--ghost mode-btn" data-mode="comedy">😄 脱口秀</button>
+      <button class="tp-btn tp-btn--ghost mode-btn" data-mode="tech">🔧 科技</button>
+      <button class="tp-btn tp-btn--ghost mode-btn" data-mode="movie">🎞️ 影视解说</button>
+      <button class="tp-btn tp-btn--ghost mode-btn" data-mode="music">🎵 音乐</button>
+
+    </div>
+
+    <button class="tp-btn" id="refreshBtn">↻ 换一批</button>
+
+    <div class="tp-grow"></div>
+    <div class="tp-sm tp-dim" id="netNote">经代理访问 YouTube</div>
+  </aside>
+
+  <!-- ── 主区 ──────────────────────────────────────────────────────── -->
+  <main class="tp-main">
+    <div class="grid-wrap tp-scroll-y" id="gridWrap">
+      <div class="tp-empty"><span class="tp-spin"></span> 加载中…</div>
+    </div>
+  </main>
+</div>
+
+<!-- ── 播放器覆盖层 ──────────────────────────────────────────────────── -->
+<div class="tp-overlay" id="playerOv" hidden>
+  <div class="pv-top">
+    <button class="tp-btn" id="pvPlay">⏸</button>
+    <button class="tp-btn" id="pvMockD" title="降低画质档位">降低画质</button>
+    <button class="tp-btn" id="pvFs">⛶</button>
+    <button class="tp-btn" id="pvClose">关闭</button>
+    <div class="pv-title" id="pvTitle">—</div>
+  </div>
+
+  <div class="parea">
+    <div class="tp-stage" id="pvStage">
+      <canvas id="pvCanvas" width="960" height="540"></canvas>
+
+      <div class="pv-status">
+        <span class="tp-chip tp-chip--accent" id="pvMode">—</span>
+        <span class="tp-chip" id="pvBuf" hidden></span>
+      </div>
+
+      <div class="tp-stage__overlay" id="pvLoad">
+        <span class="tp-spin"></span>
+        <div id="pvLoadText">连接中…</div>
+        <div class="tp-sm tp-dim" id="pvLoadSub"></div>
+      </div>
+    </div>
+
+    <div class="pv-bottom">
+      <div class="tp-progress" id="pvProgress">
+        <div class="tp-progress__track">
+          <div class="tp-progress__buffered" id="pvBuffered"></div>
+          <div class="tp-progress__fill" id="pvFill"></div>
+        </div>
+        <div class="tp-progress__knob" id="pvKnob" hidden></div>
+      </div>
+      <div class="tp-time">
+        <span id="pvCur">0:00</span>
+        <span id="pvDur">0:00</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<audio id="pvAudio" crossorigin="anonymous"></audio>
+
+<script type="module">
+import { el, replace, fmtTime, fmtCount, $, $$ } from '/js/core/dom.js';
+import { startReporting, bindPanel, log } from '/js/core/log.js';
+import { getJSON, showVersionBadge } from '/js/core/api.js';
+import { toast, toastWarn, toastDanger } from '/js/core/toast.js';
+import { AudioClock } from '/js/core/clock.js';
+import { FrameStream, sizeCanvas } from '/js/core/frames.js';
+import { MediaCtl } from '/js/core/mediactl.js';
+
+/* ============================================================================
+   YouTube 页面
+   ----------------------------------------------------------------------------
+   与 B站 页同构（同一套帧流内核、音频主时钟、布局与交互）。
+   差异：
+     · 无登录/扫码/收藏/关注（YouTube 这些需要 OAuth，本机自用不必要）
+     · 取流走服务端「yt-dlp → ffmpeg 管道」，因为 YouTube 直链对请求方式敏感
+       （详见 youtube.js 文件头注释）
+     · 缩略图走 /api/youtube/img-proxy
+   ============================================================================ */
+
+/** 画面档位：宽高必须偶数（yuv420p 要求，奇数会让 ffmpeg 输出 0 字节）。 */
+const QUALITIES = [
+  { w: 960, h: 540, fps: 15, name: '540p' },
+  { w: 640, h: 360, fps: 15, name: '360p' },
+  { w: 480, h: 270, fps: 12, name: '270p' },
+  { w: 360, h: 202, fps: 10, name: '202p' },   // 注意 202 不是 203
+];
+
+/** 分类 → 搜索关键词（YouTube 已下线 trending，用关键词轮换代替） */
+/* 分类 → 搜索关键词。
+   全部使用**中文关键词**（用户要求"都要中文的节目"），
+   且服务端还会按中文字符占比二次过滤，确保结果以中文内容为主。 */
+const CATS = {
+  mil:       { name: '军事',     icon: '🛡️', kws: ['军事 装备 解析', '军事 解说 中文', '军事 热点 分析', '国防 军事 观察'] },
+  pol:       { name: '时政',     icon: '📰', kws: ['时政 分析', '时事 评论 中文', '本周 新闻 热点', '国际 时事 解读'] },
+  doc:       { name: '纪录片',   icon: '🎬', kws: ['纪录片 中文 解说', '自然 纪录片 中文', '历史 纪录片 中文', '纪实 中文'] },
+  comedy:    { name: '脱口秀',   icon: '😄', kws: ['脱口秀 中文', '单口 喜剧 中文', '相声 精选', '搞笑 综艺 中文'] },
+  tech:      { name: '科技',     icon: '🔧', kws: ['科技 评测 中文', '数码 评测', '手机 评测 中文', '汽车 评测 中文'] },
+  movie:     { name: '影视解说', icon: '🎞️', kws: ['电影 解说 中文', '电视剧 解说', '影视 解说 热门', '悬疑 电影 解说'] },
+  music:     { name: '音乐',     icon: '🎵', kws: ['中文 热门 歌曲', '华语 流行 金曲', '车载 音乐 无损', '抖音 热歌'] },
+};
+
+const S = {
+  mode: 'hot',
+  catIdx: 0,       // 分类内关键词轮换下标
+  qi: 0,
+};
+
+let pv = null;     // 播放器状态
+
+/* ============================================================================
+   列表
+   ============================================================================ */
+
+const gridWrap = $('#gridWrap');
+
+function showLoading(t = '加载中…') {
+  replace(gridWrap, [el('div', { class: 'tp-empty' }, [el('span', { class: 'tp-spin' }), ' ' + t])]);
+}
+function showError(msg, retry) {
+  replace(gridWrap, [el('div', { class: 'tp-empty' }, [
+    el('div', { class: 'tp-error', text: msg }),
+    // 网络类错误给出明确指引：本机 YouTube 需要代理，代理不通时这里就是最直接的原因
+    /无法连接|超时|timeout|ECONN|network|fetch/i.test(String(msg))
+      ? el('div', { class: 'tp-sm tp-dim', style: { marginTop: '8px', maxWidth: '420px' },
+          text: '服务器当前无法访问 YouTube（需要代理）。其它页面不受影响，可返回首页使用视频/B站/音乐/直播。' })
+      : null,
+    retry ? el('button', { class: 'tp-btn tp-btn--primary', text: '重试', onClick: retry }) : null,
+  ])]);
+}
+
+/** 视频卡片。文本一律走 textContent（YouTube 标题常含 < > & 等字符）。 */
+function videoCard(v) {
+  const id = v.id || v.bvid;
+  const thumb = v.pic
+    ? el('img', { src: `/api/youtube/img-proxy?url=${encodeURIComponent(v.pic)}`, loading: 'lazy', alt: '' })
+    : null;
+  return el('div', { class: 'tp-tile', onClick: () => openPlayer(id, v.title || '未命名') }, [
+    el('div', { class: 'tp-tile__thumb' }, [
+      thumb,
+      v.duration ? el('span', { class: 'tp-tile__badge', text: fmtTime(v.duration) }) : null,
+    ]),
+    el('div', { class: 'tp-tile__body' }, [
+      el('div', { class: 'tp-tile__title', text: v.title || '未命名' }),
+      el('div', { class: 'tp-tile__meta', text: [v.author, v.play ? fmtCount(v.play) + '次观看' : ''].filter(Boolean).join(' · ') }),
+    ]),
+  ]);
+}
+
+function renderList(items, { title, sub, kws } = {}) {
+  const frag = [];
+  if (title || sub) {
+    frag.push(el('div', { class: 'list-head' }, [
+      el('div', { class: 'list-head__title', text: title || '' }),
+      el('div', { class: 'list-head__sub', text: sub || '' }),
+    ]));
+  }
+  if (kws && kws.length) {
+    frag.push(el('div', { class: 'kw-row' }, kws.map((k) =>
+      el('button', { class: 'kw-btn', text: '🔍 ' + k, onClick: () => doSearch(k) })
+    )));
+  }
+  frag.push(items.length
+    ? el('div', { class: 'tp-grid' }, items.map(videoCard))
+    : el('div', { class: 'tp-empty', text: '没有内容' }));
+  replace(gridWrap, frag);
+  gridWrap.scrollTop = 0;
+}
+
+/* ============================================================================
+   数据加载
+   ============================================================================ */
+
+function setMode(mode) {
+  S.mode = mode;
+  $$('.mode-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.mode === mode));
+}
+
+async function doSearch(kw) {
+  const q = (kw ?? $('#searchInput').value ?? '').trim();
+  if (!q) return;
+  $('#searchInput').value = q;
+  setMode('');
+  showLoading(`搜索「${q}」…`);
+  try {
+    const d = await getJSON(`/api/youtube/search?keyword=${encodeURIComponent(q)}&limit=24`, { timeout: 60000 });
+    const list = d.list || [];
+    renderList(list, { title: `搜索：${q}`, sub: `${list.length} 个结果` });
+  } catch (e) {
+    showError(e.message || '搜索失败', () => doSearch(q));
+  }
+}
+
+async function loadHot() {
+  showLoading('加载热门…');
+  // 服务端按多品类混合返回（YouTube 已下线 trending，单关键词会全是歌单）
+  const d = await getJSON('/api/youtube/hot?limit=24', { timeout: 60000 });
+  const list = d.list || [];
+  const cats = Array.isArray(d.categories) ? d.categories.length : 0;
+  renderList(list, {
+    title: '🔥 综合热门',
+    sub: cats ? `${list.length} 个 · 覆盖 ${cats} 个品类` : `${list.length} 个`,
+  });
+}
+
+async function loadCat(key) {
+  const c = CATS[key];
+  if (!c) return;
+  const kw = c.kws[S.catIdx % c.kws.length];
+  S.catIdx++;
+  showLoading(`${c.icon} ${c.name} · 加载中…`);
+  try {
+    const d = await getJSON(`/api/youtube/search?keyword=${encodeURIComponent(kw)}&limit=24`, { timeout: 60000 });
+    const list = d.list || [];
+    renderList(list, { title: `${c.icon} ${c.name}`, sub: `「${kw}」· ${list.length} 个`, kws: c.kws });
+  } catch (e) {
+    showError(e.message || '加载失败', () => loadCat(key));
+  }
+}
+
+async function switchMode(mode) {
+  setMode(mode);
+  try {
+    if (mode === 'hot') return await loadHot();
+    if (CATS[mode]) return await loadCat(mode);
+  } catch (e) {
+    showError(e.message || '加载失败', () => switchMode(mode));
+  }
+}
+
+/* ============================================================================
+   播放器
+   ============================================================================ */
+
+function setChip(node, text, cls) {
+  node.textContent = text;
+  node.hidden = !text;
+  if (cls !== undefined) node.className = 'tp-chip' + (cls ? ' ' + cls : '');
+}
+
+function openPlayer(id, title) {
+  if (!id) { toastDanger('缺少视频 ID'); return; }
+
+  const q = QUALITIES[S.qi];
+  sizeCanvas($('#pvCanvas'), q, false);
+
+  const audio = $('#pvAudio');
+  audio.src = `/api/youtube/audio-file/${encodeURIComponent(id)}`;
+
+  $('#pvTitle').textContent = title;
+  $('#playerOv').hidden = false;
+  $('#pvLoad').hidden = false;
+  $('#pvLoadText').textContent = '正在连接 YouTube…';
+  $('#pvLoadSub').textContent = '首次播放需要 yt-dlp 取流，约 5~15 秒';
+  setChip($('#pvMode'), `◆ 帧流 · ${q.name}`, 'tp-chip--accent');
+
+  const clock = new AudioClock(audio).attach();
+
+  getJSON(`/api/youtube/duration/${encodeURIComponent(id)}`, { timeout: 60000 })
+    .then((d) => { if (d && d.duration) clock.setDuration(d.duration); })
+    .catch(() => {});
+
+  const stream = new FrameStream({
+    canvas: $('#pvCanvas'), audio,
+    url: `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/frames`,
+    query: { yt: id, fps: q.fps, w: q.w, h: q.h },
+    label: 'yt:' + id,
+    syncLag: 0.12,
+    ownLoop: true,
+    // YouTube 管道模式首帧明显更慢（yt-dlp 取流），
+    // 停摆阈值放宽，避免把"正常慢启动"误判为卡死并触发重连。
+    stallMs: 45000,
+    /* 帧流落后音频时触发重新对齐。
+       YouTube 上音频常常先跑（它先就绪），画面从 0 开始推 —— 必须 seek 到
+       音频当前位置，否则所有帧都"过期"，画面永远不渲染。
+       由渲染循环直接回调，比定时轮询可靠。 */
+    /* 帧流落后时不 seek，而是"等首帧"。
+       为什么不对齐：YouTube 的 seek = 重新起一个 yt-dlp 从目标时间点取流，
+       而 yt-dlp 要 10~20 秒才出第一帧。音频早已跑在前面，seek 完音频又跑远
+       了 —— 追不上，只会形成"不断重连、永远没画面"的死循环。
+       正确做法见下面的 startWhenReady：**等画面就绪后再起播音频**，
+       两者从同一起点开始，天然同步。 */
+    /* 落后处理。
+       注意：YouTube 的 seek 是"重起 yt-dlp 从目标位置取流"，每次要 10~20 秒；
+       而音频早已跑远 —— 反复 seek 只会不断重连、永远追不上（实测 dropped
+       上万帧、drawn 恒为 0）。
+       因此这里**不做 seek**，只记录；同步由 startWhenReady 的时序保证
+       （先等画面出首帧，再起播音频）。 */
+    onLagging: () => { /* 时序保证同步，此处不 seek */ },
+    onClose: (ev, frames) => {
+      if (frames === 0) {
+        $('#pvLoad').hidden = false;
+        $('#pvLoadText').textContent = '画面未就绪，正在重连…';
+      }
+    },
+  });
+
+  pv = { id, title, stream, clock, dragging: false, started: false };
+  window.__pvStream = stream;   // 诊断用
+  stream.start(0);
+
+  /* 起播时序（关键）。
+     YouTube 的画面要等 yt-dlp 取流（10~20 秒），而音频首字节很快。
+     若先起音频，音频会独自跑在前面，画面帧全部"过期" → 有声音无画面；
+     而靠 seek 追赶又因为"每次 seek 都要重起 yt-dlp"而永远追不上。
+
+     因此改为：**先等画面出第一帧，再起播音频** —— 两者从同一起点出发，
+     天然同步。等待期间遮罩显示"正在准备画面"。
+     若画面迟迟不来（>35s），也先起音频，保证至少能听。 */
+  let playTried = 0;
+  const tryPlay = () => {
+    playTried++;
+    audio.play()
+      .then(() => {
+        pv.started = true;
+        updatePvPlayBtn();
+        log('yt-audio-playing', { tried: playTried });
+        /* 关键：帧流必须跟着音频走。
+           音频要等 yt-dlp 取流（十几秒），而帧流从 0 开始推 —— 等第一批帧
+           到达时音频已经跑到十几秒，那些帧全部"过期"，_render 找不到可呈现
+           的帧 → 有声音无画面。
+
+           解法：起播后持续检查"帧缓冲是否落后于音频"，落后就 seek 对齐。
+           只在明显落后时对齐（避免抖动），且只在前 60 秒内做（之后自然同步）。 */
+        // 对齐由 FrameStream 的 onLagging 回调驱动（更可靠）
+      })
+      .catch((e) => {
+        log('yt-audio-play-fail', { tried: playTried, err: e.name });
+        if (playTried < 6) {
+          // 数据还没到位：等一会再试
+          setTimeout(tryPlay, 1500);
+        } else {
+          $('#pvLoadText').textContent = '点此开始播放';
+          $('#pvLoad').style.cursor = 'pointer';
+          $('#pvLoad').onclick = () => {
+            $('#pvLoad').onclick = null;
+            $('#pvLoad').style.cursor = '';
+            tryPlay();
+          };
+        }
+      });
+  };
+  /* 等首帧 → 起播音频。
+     画面就绪（drawn>0）后立刻起播，保证音画同步；
+     35 秒仍无画面则先起音频（至少能听），画面随后自然跟上。 */
+  let started_ = false;
+  const startWhenReady = () => {
+    if (started_) return;
+    if (pv && pv.stream.drawn > 0) {
+      started_ = true;
+      clearInterval(readyPoll);
+      log('yt-video-ready', { waitedMs: Date.now() - t0Start });
+      // 画面与音频都从 0 开始 → 天然同步
+      try { audio.currentTime = 0; } catch {}
+      tryPlay();
+      return;
+    }
+    // 画面实在不来（>45s）：先起音频保证能听；画面到达后再由 seek 追一次
+    if (Date.now() - t0Start > 45000) {
+      started_ = true;
+      clearInterval(readyPoll);
+      log('yt-video-timeout-start-audio');
+      tryPlay();
+    }
+  };
+  const t0Start = Date.now();
+  const readyPoll = setInterval(startWhenReady, 400);
+  // 音频数据就绪也检查一次（通常画面先到）
+  audio.addEventListener('canplay', startWhenReady);
+
+  // 首帧到达后收起遮罩。
+  // 用 FrameStream 的 onFirstFrame 回调（比轮询计数可靠），
+  // 再加一个兜底定时器防止回调因异常未触发。
+  stream.o.onFirstFrame = () => {
+    log('yt-first-frame-shown');
+    $('#pvLoad').hidden = true;
+  };
+  const coverFallback = setInterval(() => {
+    if (!pv) { clearInterval(coverFallback); return; }
+    if (pv.stream.drawn > 0) { $('#pvLoad').hidden = true; clearInterval(coverFallback); }
+  }, 1000);
+  setTimeout(() => clearInterval(coverFallback), 90000);
+
+  // YouTube 首次播放要等 yt-dlp 取流 + ffmpeg 转码，比 B站 慢得多。
+  // 默认 12s 的"从未开始播放"判定会误报，这里放宽到 90s。
+  clock.watch({
+    neverStartedMs: 90000,
+    onFail: (why) => {
+      log('yt-audio-fail', why);
+      if (why === 'ended') { closePlayer(); return; }
+      const pos = clock.position() || 0;
+      audio.src = `/api/youtube/audio-file/${encodeURIComponent(id)}?t=${Date.now()}`;
+      const onMeta = () => {
+        audio.removeEventListener('loadedmetadata', onMeta);
+        try { audio.currentTime = pos; } catch {}
+        audio.play().catch(() => {});
+      };
+      audio.addEventListener('loadedmetadata', onMeta);
+    },
+  });
+
+  MediaCtl.setMeta({ title, artist: 'YouTube', album: '在线播放', artwork: MediaCtl.cover(title) });
+  updatePvPlayBtn();
+  startPvProgress();
+  log('yt-open', { id, title });
+}
+
+function closePlayer() {
+  stopPvProgress();
+  if (pv) {
+    try { pv.stream.destroy(); } catch {}
+    try { pv.clock.detach(); } catch {}
+    pv = null;
+  }
+  const audio = $('#pvAudio');
+  try { audio.pause(); audio.removeAttribute('src'); audio.load(); } catch {}
+  $('#playerOv').hidden = true;
+  $('#pvLoad').hidden = false;
+  $('#pvLoad').style.cursor = '';
+  $('#pvLoad').onclick = null;
+}
+
+function updatePvPlayBtn() {
+  $('#pvPlay').textContent = $('#pvAudio').paused ? '▶' : '⏸';
+}
+
+let pvTimer = 0;
+function startPvProgress() {
+  stopPvProgress();
+  pvTimer = setInterval(() => {
+    if (!pv) return;
+    const audio = $('#pvAudio');
+    const dur = (Number.isFinite(audio.duration) && audio.duration > 0) ? audio.duration : (pv.clock.duration() || 0);
+    const pos = pv.clock.position() || 0;
+    if (dur > 0 && !pv.dragging) {
+      const f = Math.max(0, Math.min(1, pos / dur));
+      $('#pvFill').style.width = (f * 100) + '%';
+      $('#pvKnob').style.left = (f * 100) + '%';
+      $('#pvCur').textContent = fmtTime(pos);
+    }
+    $('#pvDur').textContent = fmtTime(dur);
+    const last = pv.stream.buffer.length ? pv.stream.buffer[pv.stream.buffer.length - 1].t : 0;
+    if (dur > 0) $('#pvBuffered').style.width = Math.min(100, (last / dur) * 100) + '%';
+    setChip($('#pvBuf'), pv.stream.statsText(), '');
+    MediaCtl.setPosition(dur, pos, 1);
+  }, 500);
+}
+function stopPvProgress() { clearInterval(pvTimer); pvTimer = 0; }
+
+/* 进度条拖动 */
+const pvProgress = $('#pvProgress');
+function pvFrac(e) {
+  const r = pvProgress.getBoundingClientRect();
+  return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+}
+pvProgress.addEventListener('pointerdown', (e) => {
+  if (!pv) return;
+  pv.dragging = true;
+  pvProgress.setPointerCapture(e.pointerId);
+  $('#pvKnob').hidden = false;
+  pvPreview(pvFrac(e));
+});
+pvProgress.addEventListener('pointermove', (e) => { if (pv && pv.dragging) pvPreview(pvFrac(e)); });
+pvProgress.addEventListener('pointerup', (e) => {
+  if (!pv || !pv.dragging) return;
+  pv.dragging = false;
+  $('#pvKnob').hidden = true;
+  const audio = $('#pvAudio');
+  const dur = Number.isFinite(audio.duration) ? audio.duration : pv.clock.duration();
+  if (dur > 0) {
+    const t = pvFrac(e) * dur;
+    audio.currentTime = t;
+    // 帧流 seek：YouTube 走管道模式，服务端会用 -ss 重新取流
+    pv.stream.seek(t);
+    pv.clock.resync();
+  }
+});
+pvProgress.addEventListener('pointercancel', () => { if (pv) { pv.dragging = false; $('#pvKnob').hidden = true; } });
+
+function pvPreview(f) {
+  const audio = $('#pvAudio');
+  const dur = Number.isFinite(audio.duration) ? audio.duration : (pv ? pv.clock.duration() : 0);
+  $('#pvFill').style.width = (f * 100) + '%';
+  $('#pvKnob').style.left = (f * 100) + '%';
+  if (dur) $('#pvCur').textContent = fmtTime(f * dur);
+}
+
+/* ============================================================================
+   交互绑定
+   ============================================================================ */
+
+$$('.mode-btn').forEach((b) => b.addEventListener('click', () => switchMode(b.dataset.mode)));
+$('#searchBtn').addEventListener('click', () => doSearch());
+$('#searchInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
+$('#refreshBtn').addEventListener('click', () => switchMode(S.mode || 'hot'));
+
+$('#pvClose').addEventListener('click', closePlayer);
+$('#pvPlay').addEventListener('click', () => {
+  const a = $('#pvAudio');
+  if (a.paused) a.play().catch(() => {}); else a.pause();
+  updatePvPlayBtn();
+});
+$('#pvFs').addEventListener('click', async () => {
+  const appEl = $('#playerOv');
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await appEl.requestFullscreen();
+  } catch { appEl.classList.toggle('is-fs'); }
+});
+$('#pvMockD').addEventListener('click', () => {
+  if (!pv) return;
+  S.qi = Math.min(QUALITIES.length - 1, S.qi + 1);
+  const q = QUALITIES[S.qi];
+  setChip($('#pvMode'), `◆ 帧流 · ${q.name}`, 'tp-chip--accent');
+  const pos = pv.clock.position() || 0;
+  pv.stream.stop(true);
+  sizeCanvas($('#pvCanvas'), q, false);
+  pv.stream.o.query.fps = q.fps;
+  pv.stream.o.query.w = q.w;
+  pv.stream.o.query.h = q.h;
+  pv.stream.qualityIdx = S.qi;
+  pv.stream.start(pos);
+  toast(`画质：${q.name}`);
+});
+
+MediaCtl.bind({
+  play: () => { const a = $('#pvAudio'); if (a.paused) a.play().catch(() => {}); updatePvPlayBtn(); },
+  pause: () => { $('#pvAudio').pause(); updatePvPlayBtn(); },
+  toggle: () => { const a = $('#pvAudio'); if (a.paused) a.play().catch(() => {}); else a.pause(); updatePvPlayBtn(); },
+  stop: closePlayer,
+  seekBy: (d) => {
+    if (!pv) return;
+    const a = $('#pvAudio');
+    const dur = Number.isFinite(a.duration) ? a.duration : pv.clock.duration();
+    const t = Math.max(0, Math.min(dur || 0, (pv.clock.position() || 0) + d));
+    a.currentTime = t; pv.stream.seek(t); pv.clock.resync();
+  },
+  isPlaying: () => !$('#pvAudio').paused,
+});
+
+document.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.key === 'Escape' && pv) closePlayer();
+  if (e.key === ' ' && pv) { e.preventDefault(); $('#pvPlay').click(); }
+});
+
+window.addEventListener('pagehide', () => { try { closePlayer(); } catch {} });
+
+/* ============================================================================
+   启动
+   ============================================================================ */
+
+startReporting();
+bindPanel();
+showVersionBadge();
+
+/* 启动前先探测服务端能否访问 YouTube。
+   若不能（例如代理未配置/不通），直接给出提示，避免用户在"加载中"白等。
+   注意：这里只做一次轻量探测，失败不影响其它页面。 */
+(async () => {
+  try {
+    await getJSON('/api/youtube/hot?limit=1', { timeout: 30000 });
+    await switchMode('hot');
+  } catch (e) {
+    log('youtube-unavailable', e.message);
+    showError(
+      '暂时无法访问 YouTube：' + (e.message || '网络不通'),
+      () => switchMode('hot')
+    );
+  }
+})();
+log('youtube-ready');
+</script>
+</body>
+</html>

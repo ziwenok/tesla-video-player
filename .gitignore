@@ -1,0 +1,44 @@
+node_modules/
+.env
+videos/*
+!videos/.gitkeep
+subtitles/*
+!subtitles/.gitkeep
+music/
+lyrics/
+state/
+debug.log
+debug.log.*
+*.bak*
+*.log
+/index.html
+public/test/*.mp4
+ssl.crt
+ssl.key
+
+# ─── 本地调试脚本 / 临时产物（保留文件本体，仅不纳入 git）───
+HANDOFF.md
+grab_frame.cjs
+test_bili.mjs
+test_wss.cjs
+tmp_cold.cjs
+tmp_ff.cjs
+tmp_ff2.cjs
+tmp_gsu.mjs
+tmp_ws_monitor.cjs
+tmp_ws_monitor2.cjs
+public/diag.html
+
+# ─── 国屏TV 发布产物（另一个 Android 电视 APP，放在 public/ 仅供车机下载，不属于本仓库源码）───
+public/guoping-tv-v1.0.apk
+public/guoping-tv-source.zip
+public/guoping-tv-README.md
+# 未被引用的重复文件：player.html 用的是 vendor/mp4box.all.mjs
+public/vendor/mp4box.all.js
+
+# ─── 第三方二进制依赖（ffmpeg.wasm 的 npm 包产物，共 ~63M）──────────────
+# 这些由 npm install ffmpeg.wasm 提供，不入库。
+# 若需车机端视频转码功能，请执行:
+#   npm install @ffmpeg/ffmpeg @ffmpeg/core @ffmpeg/core-mt
+# 然后把 node_modules 里的对应文件复制到 public/vendor/ffmpegwasm/
+public/vendor/ffmpegwasm/**/*.wasm

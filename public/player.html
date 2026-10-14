@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<title>视频播放器 · Tesla</title>
+
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/app.css">
+<script src="/js/core/viewport.js"></script>
+
+<style>
+  /* 播放器特有样式 */
+  .side-head {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--tp-sp-3);
+  }
+
+  .vid-list { flex: 1 1 auto; min-height: 0; }
+
+  /* 播放区 */
+  .player-main { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+
+  .controls {
+    flex: 0 0 auto;
+    background: var(--tp-surface);
+    border-top: 1px solid var(--tp-line);
+    padding: var(--tp-sp-3) var(--tp-sp-4) var(--tp-sp-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--tp-sp-2);
+  }
+
+  .ctl-row {
+    display: flex;
+    align-items: center;
+    gap: var(--tp-sp-3);
+  }
+
+  .ctl-row--center { justify-content: center; }
+
+  .play-btn {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: var(--tp-accent);
+    color: #00212b;
+    border: none;
+    font-size: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+  .play-btn:hover { background: var(--tp-accent-2); }
+
+  .sync-box {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--tp-dim);
+    font-size: var(--tp-fs-sm);
+    white-space: nowrap;
+  }
+  .sync-box button {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--tp-r-sm);
+    background: var(--tp-surface-3);
+    color: var(--tp-text-2);
+    border: 1px solid var(--tp-line-2);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+  }
+  .sync-box button:hover { background: var(--tp-surface-4); color: var(--tp-text); }
+
+  .stage-status {
+    position: absolute;
+    left: var(--tp-sp-4);
+    top: var(--tp-sp-4);
+    z-index: 4;
+    display: flex;
+    gap: var(--tp-sp-2);
+    flex-wrap: wrap;
+    pointer-events: none;
+  }
+
+  .stage-title {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    padding: var(--tp-sp-4) var(--tp-sp-4) var(--tp-sp-6);
+    background: linear-gradient(to bottom, rgba(0,0,0,.72), transparent);
+    z-index: 3;
+    pointer-events: none;
+    font-size: var(--tp-fs-md);
+    font-weight: 600;
+    color: #fff;
+    text-shadow: 0 1px 4px #000;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* 字幕选择 */
+  .sub-select {
+    background: var(--tp-surface-3);
+    color: var(--tp-text-2);
+    border: 1px solid var(--tp-line-2);
+    border-radius: var(--tp-r);
+    min-height: 38px;
+    padding: 0 var(--tp-sp-2);
+    font-size: var(--tp-fs-sm);
+    font-family: inherit;
+    max-width: 160px;
+    outline: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="tp-app" id="app">
+
+  <!-- ── 侧栏：视频列表 ─────────────────────────────────────────────── -->
+  <aside class="tp-sidebar">
+    <div class="side-head">
+      <a class="tp-back" href="/">← 返回首页</a>
+      <div class="tp-side-title">视频播放器</div>
+    </div>
+
+    <div class="tp-side-section">
+      <div class="tp-side-label" id="libInfo">视频库</div>
+    </div>
+
+    <ul class="tp-list vid-list tp-scroll-y" id="vidList">
+      <li class="tp-empty"><span class="tp-spin"></span> 加载中…</li>
+    </ul>
+  </aside>
+
+  <!-- ── 主区：画面 + 控制 ──────────────────────────────────────────── -->
+  <main class="tp-main player-main">
+
+    <div class="tp-stage" id="stage">
+      <canvas id="canvas" width="960" height="540"></canvas>
+
+      <div class="stage-title" id="stageTitle" hidden></div>
+
+      <div class="stage-status">
+        <span class="tp-chip" id="chipEngine">待机</span>
+        <span class="tp-chip" id="chipBuf" hidden></span>
+        <span class="tp-chip tp-chip--warn" id="chipSync" hidden></span>
+      </div>
+
+      <div class="tp-subtitle" id="subtitle" hidden></div>
+
+      <div class="tp-stage__overlay" id="overlay">
+        <div style="font-size:40px">🎬</div>
+        <div>从左侧选择一个视频开始播放</div>
+        <div class="tp-sm tp-dim" id="overlayHint"></div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="tp-progress" id="progress">
+        <div class="tp-progress__track">
+          <div class="tp-progress__buffered" id="buffered"></div>
+          <div class="tp-progress__fill" id="fill"></div>
+        </div>
+        <div class="tp-progress__knob" id="knob" hidden></div>
+      </div>
+
+      <div class="tp-time">
+        <span id="curTime">0:00</span>
+        <span id="durTime">0:00</span>
+      </div>
+
+      <div class="ctl-row">
+        <button class="play-btn" id="playBtn" title="播放 / 暂停">▶</button>
+        <button class="tp-icon-btn" id="stopBtn" title="停止">■</button>
+        <button class="tp-icon-btn" id="prevBtn" title="上一个">⏮</button>
+        <button class="tp-icon-btn" id="nextBtn" title="下一个">⏭</button>
+
+        <!-- 不用 spacer：控件全部靠左（司机在左侧） -->
+        <label class="sync-box" title="画面比声音快就按 ＋，慢就按 －">
+          音画
+          <button id="syncMinus">−</button>
+          <span id="syncVal" class="tp-tnum">0.1s</span>
+          <button id="syncPlus">＋</button>
+        </label>
+
+        <select class="sub-select" id="subSelect" title="字幕">
+          <option value="">无字幕</option>
+        </select>
+
+        <label class="tp-volume" title="音量">
+          <span id="volIcon">🔊</span>
+          <input type="range" id="volume" min="0" max="1" step="0.05" value="1">
+        </label>
+
+        <button class="tp-icon-btn" id="fsBtn" title="全屏">⛶</button>
+        <button class="tp-icon-btn" data-tp-log-toggle title="诊断日志">📋</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 音频：D 档下音频不受限，作为主时钟 -->
+<audio id="audio" crossorigin="anonymous"></audio>
+
+<script type="module">
+import { el, replace, fmtSize, fmtTime, $ } from '/js/core/dom.js';
+import { startReporting, bindPanel, log } from '/js/core/log.js';
+import { getJSON, ApiError } from '/js/core/api.js';
+import { toast, toastDanger, toastWarn } from '/js/core/toast.js';
+import { AudioClock } from '/js/core/clock.js';
+import { FrameStream, sizeCanvas, loadSyncLag, saveSyncLag } from '/js/core/frames.js';
+import { WebCodecsEngine } from '/js/core/webcodecs.js';
+import { MediaCtl } from '/js/core/mediactl.js';
+import { showVersionBadge } from '/js/core/api.js';
+
+/* ============================================================================
+   播放引擎选择
+   ----------------------------------------------------------------------------
+   重写前的 player.html 有四个引擎，其中 NativeEngine 依赖 /api/stream/:filename
+   —— 实测该路由不存在（404），也就是说那条分支从来没启用过，属于死代码。
+   保留的引擎：
+     · webcodecs —— 优先。原生解码 → VideoFrame → canvas，D 档可用且省 CPU
+     · frames    —— 兜底。服务端 ffmpeg 出 JPEG，WS 推帧（D 档一定可用）
+     · element   —— 最后手段。直接 <video>，受 D 档限制，仅在 P 档可用
+   ============================================================================ */
+
+/** 画面档位：宽高必须是偶数（yuv420p 要求，奇数会让 ffmpeg 输出 0 字节）。 */
+const QUALITIES = [
+  { w: 640,  h: 360, fps: 12, q: 9, name: '360p' },
+  { w: 800,  h: 450, fps: 15, q: 8, name: '450p' },
+  { w: 960,  h: 540, fps: 15, q: 6, name: '540p' },
+  { w: 960,  h: 540, fps: 24, q: 5, name: '540p+' },
+];
+
+/* ============================================================================
+   应用状态
+   ============================================================================ */
+
+const app = {
+  videos: [],
+  current: null,          // 当前视频 {name,size,codec,...}
+  engine: null,           // {kind, dispose()}
+  clock: null,
+  syncLag: loadSyncLag(0.12),
+  playing: false,
+  userPaused: true,
+  duration: 0,
+  subtitle: null,
+  cues: [],
+  dragging: false,
+  qi: 2,
+  pollTimer: 0,
+};
+
+const canvas = $('#canvas');
+const audio  = $('#audio');
+const overlay = $('#overlay');
+
+/* ============================================================================
+   工具
+   ============================================================================ */
+
+const enc = (s) => encodeURIComponent(s);
+
+function setOverlay(show, text, hint) {
+  overlay.hidden = !show;
+  if (text) overlay.querySelector('div:nth-child(2)').textContent = text;
+  $('#overlayHint').textContent = hint || '';
+}
+
+function setChip(node, text, cls) {
+  node.textContent = text;
+  node.hidden = !text;
+  if (cls !== undefined) node.className = 'tp-chip' + (cls ? ' ' + cls : '');
+}
+
+function setEngineChip(text, kind) {
+  const n = $('#chipEngine');
+  n.textContent = text;
+  n.className = 'tp-chip' + (kind === 'frames' ? ' tp-chip--accent'
+                          : kind === 'webcodecs' ? ' tp-chip--ok' : '');
+}
+
+/* ============================================================================
+   视频库
+   ============================================================================ */
+
+async function loadVideos(showSpinner = true) {
+  const list = $('#vidList');
+  if (showSpinner) replace(list, [el('li', { class: 'tp-empty' }, [el('span', { class: 'tp-spin' }), ' 加载中…'])]);
+
+  let vids;
+  try {
+    vids = await getJSON('/api/videos?_t=' + Date.now(), { timeout: 15000 });
+  } catch (e) {
+    replace(list, [el('li', { class: 'tp-empty' }, [
+      el('div', { text: '视频列表加载失败' }),
+      el('div', { class: 'tp-sm', text: e.message }),
+      el('button', { class: 'tp-btn', text: '重试', onClick: () => loadVideos() }),
+    ])]);
+    return;
+  }
+
+  app.videos = Array.isArray(vids) ? vids : [];
+  renderVideoList();
+
+  // 有视频还在转码/切片时轮询刷新状态
+  const busy = app.videos.some((v) => ['transcoding', 'queued', 'segmenting', 'extracting'].includes(v.status)
+    || ['transcoding', 'queued', 'segmenting'].includes(v.segments));
+  clearTimeout(app.pollTimer);
+  if (busy) app.pollTimer = setTimeout(() => loadVideos(false), 5000);
+}
+
+function statusText(v) {
+  if (v.status === 'transcoding') return '转码中';
+  if (v.status === 'queued') return '排队中';
+  if (v.status === 'error') return '转码失败';
+  if (v.segments === 'segmenting') return '切片中';
+  if (v.segments === 'extracting') return '提取音轨';
+  if (v.segments === 'error') return '切片失败';
+  if (v.needsTranscode) return '待转码';
+  return '';
+}
+
+function renderVideoList() {
+  const list = $('#vidList');
+  if (!app.videos.length) {
+    replace(list, [el('li', { class: 'tp-empty', text: '视频目录为空' })]);
+    $('#libInfo').textContent = '视频库';
+    return;
+  }
+
+  const total = app.videos.reduce((s, v) => s + (v.size || 0), 0);
+  $('#libInfo').textContent = `${app.videos.length} 个 · ${fmtSize(total)}`;
+
+  replace(list, app.videos.map((v, i) => {
+    const st = statusText(v);
+    const meta = `${fmtSize(v.size)} · ${(v.codec || '?').toUpperCase()}${st ? ' · ' + st : ''}`;
+    const item = el('li', {
+      class: 'tp-item' + (app.current && app.current.name === v.name ? ' is-active' : ''),
+      dataset: { index: String(i) },
+      onClick: () => playVideo(i),
+    }, [
+      el('div', { class: 'tp-item__title', text: v.name }),
+      el('div', { class: 'tp-item__meta', text: meta }),
+    ]);
+    return item;
+  }));
+}
+
+/* ============================================================================
+   播放引擎
+   ============================================================================ */
+
+/* ── 帧流引擎（D 档一定可用） ─────────────────────────────────────────── */
+
+function createFramesEngine(video, seek = 0) {
+  const q = QUALITIES[app.qi];
+  sizeCanvas(canvas, q, !!document.fullscreenElement);
+
+  const stream = new FrameStream({
+    canvas,
+    audio,
+    url: `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/frames`,
+    query: { file: video.name, fps: q.fps, w: q.w, h: q.h, q: q.q, loop: '0' },
+    label: 'frames',
+    qualityIdx: app.qi,
+    qualities: QUALITIES,
+    ownLoop: false,                 // 由播放器的统一循环驱动
+    onQualityChange: (idx) => {
+      app.qi = idx;
+      const nq = QUALITIES[idx];
+      log('engine-quality', nq.name);
+      setChip($('#chipBuf'), `档位 ${nq.name}`, '');
+      // 换档需要重建连接（保持当前播放位置）
+      if (app.engine && app.engine.kind === 'frames') {
+        const pos = app.clock ? (app.clock.position() || 0) : 0;
+        app.engine.dispose();
+        app.engine = createFramesEngine(video, pos);
+        app.engine.start(pos);
+      }
+    },
+    onClose: () => setChip($('#chipBuf'), '重连中…', 'tp-chip--warn'),
+  });
+
+  return {
+    kind: 'frames',
+    stream,
+    start(sec) { stream.start(sec ?? 0); },
+    seek(sec) { stream.seek(sec); },
+    tick(pos) { stream.render(pos); },
+    dispose() { stream.destroy(); },
+    statsText: () => stream.statsText(),
+  };
+}
+
+/* ── WebCodecs 引擎（原生解码，D 档可用且省服务端 CPU） ───────────────── */
+
+function createWebCodecsEngine(video) {
+  if (typeof VideoDecoder === 'undefined') return null;
+  const eng = new WebCodecsEngine({
+    canvas,
+    audio,
+    name: video.name,
+    syncLag: app.syncLag,
+    onFatal: (msg) => {
+      // 解码器不可恢复 → 立刻切到帧流，音频不中断，画面继续出
+      if (app.engine !== eng) return;
+      log('engine-fallback', { from: 'webcodecs', msg });
+      toastWarn('原生解码失败，已切换到兼容模式');
+      swapToFrames(video);
+    },
+    onStats: () => {},
+  });
+  return {
+    kind: 'webcodecs',
+    eng,
+    async start(sec) {
+      await eng.init();
+      if (sec) await eng.seek(sec);
+    },
+    seek(sec) { eng.seek(sec); },
+    tick(pos) { eng.tick(pos); },
+    dispose() { eng.dispose(); },
+    statsText: () => eng.statsText(),
+  };
+}
+
+/* ── <video> 兜底引擎（受 D 档限制，仅 P 档可用） ─────────────────────── */
+
+function createElementEngine(video, seek = 0) {
+  const v = document.createElement('video');
+  v.style.display = 'none';
+  v.crossOrigin = 'anonymous';
+  v.preload = 'auto';
+  v.src = `/api/video/${enc(video.name)}`;
+  document.body.append(v);
+
+  const ctx = canvas.getContext('2d', { alpha: false });
+
+  return {
+    kind: 'element',
+    videoEl: v,
+    start(sec) {
+      if (sec) v.currentTime = sec;
+      v.play().catch(() => {});
+    },
+    seek(sec) { v.currentTime = sec; },
+    tick() {
+      if (v.readyState < 2) return;
+      const cw = canvas.width, ch = canvas.height;
+      const iw = v.videoWidth, ih = v.videoHeight;
+      if (!iw || !ih) return;
+      const s = Math.min(cw / iw, ch / ih);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, cw, ch);
+      try { ctx.drawImage(v, (cw - iw * s) / 2, (ch - ih * s) / 2, iw * s, ih * s); } catch {}
+    },
+    dispose() { try { v.pause(); v.removeAttribute('src'); v.load(); } catch {} v.remove(); },
+    statsText: () => `直接播放 ${v.videoWidth}×${v.videoHeight}`,
+  };
+}
+
+/* ── 引擎切换 ─────────────────────────────────────────────────────────── */
+
+/** WebCodecs 不可用时切到帧流（保持位置与音频不断）。 */
+function swapToFrames(video) {
+  const pos = app.clock ? (app.clock.position() || 0) : 0;
+  if (app.engine) { try { app.engine.dispose(); } catch {} }
+  const eng = createFramesEngine(video, pos);
+  app.engine = eng;
+  setEngineChip('帧流 · D 档可用', 'frames');
+  eng.start(pos);
+}
+
+/* ============================================================================
+   统一渲染循环
+   ----------------------------------------------------------------------------
+   重写前每个引擎各自维护 rAF 自调度 + 看门狗 + 可见性恢复，三份实现还都不完全
+   一样。最要命的坑是"在 tick 内部自我重调度"：页面被报告 hidden 后浏览器挂起
+   rAF，之后没有任何回调会再调度它 → 整条链永久断掉 → 有声音无画面。
+   现在只有一个循环，兜底只有一处：可被外部重启 + 看门狗 + 恢复可见时重启。
+   ============================================================================ */
+
+const loop = {
+  raf: 0,
+  at: 0,
+  watch: 0,
+  fallback: 0,
+  alive: false,
+};
+
+function scheduleRaf() {
+  if (!loop.alive) return;
+  loop.raf = requestAnimationFrame(() => {
+    loop.raf = 0;
+    loop.at = Date.now();
+    tick();
+    scheduleRaf();
+  });
+}
+
+function tick() {
+  if (!app.clock || !app.engine) return;
+  const pos = app.clock.position();
+  if (pos === null) return;
+  try { app.engine.tick(pos); } catch (e) { log('tick-error', String(e && e.message)); }
+}
+
+function startLoop() {
+  if (loop.alive) return;
+  loop.alive = true;
+  loop.at = Date.now();
+  scheduleRaf();
+
+  // 看门狗：每秒检查，rAF 超过 1.5s 没回调就强制重启
+  clearInterval(loop.watch);
+  loop.watch = setInterval(() => {
+    if (!loop.alive) return;
+    if (Date.now() - loop.at > 1500) {
+      log('raf-watchdog-restart');
+      if (loop.raf) { cancelAnimationFrame(loop.raf); loop.raf = 0; }
+      scheduleRaf();
+    }
+  }, 1000);
+
+  // 最后兜底：即使 rAF 完全不可用也保持低频出画（页面隐藏时会被钳制到 1s）
+  clearInterval(loop.fallback);
+  loop.fallback = setInterval(tick, 400);
+}
+
+function stopLoop() {
+  loop.alive = false;
+  if (loop.raf) cancelAnimationFrame(loop.raf);
+  loop.raf = 0;
+  clearInterval(loop.watch); loop.watch = 0;
+  clearInterval(loop.fallback); loop.fallback = 0;
+}
+
+// 页面重新可见时立刻重启（隐藏期间音频仍在推进，必须马上恢复出画）
+function onVisible() {
+  if (document.visibilityState !== 'visible') return;
+  if (app.clock) app.clock.resync();
+  if (app.engine && app.engine.kind === 'frames') app.engine.stream.dropStale();
+  if (loop.alive) { if (loop.raf) cancelAnimationFrame(loop.raf); loop.raf = 0; scheduleRaf(); }
+}
+document.addEventListener('visibilitychange', onVisible);
+window.addEventListener('focus', onVisible);
+window.addEventListener('pageshow', onVisible);
+
+/* ============================================================================
+   播放控制
+   ============================================================================ */
+
+async function playVideo(index) {
+  const video = app.videos[index];
+  if (!video) return;
+
+  stopPlayback();
+  app.current = video;
+  renderVideoList();
+  setOverlay(true, '正在准备…', video.name);
+  $('#stageTitle').textContent = video.name;
+  $('#stageTitle').hidden = false;
+
+  // 音频：主时钟（D 档下音频不受限）
+  audio.src = `/api/audio/${enc(video.name)}`;
+
+  // 时长优先用服务端 ffprobe（音频 metadata 在 seek 后会变）
+  try {
+    const d = await getJSON(`/api/duration/${enc(video.name)}`, { timeout: 15000 });
+    app.duration = d && d.duration ? d.duration : 0;
+  } catch { app.duration = 0; }
+
+  app.clock = new AudioClock(audio).attach();
+  app.clock.setDuration(app.duration);
+  await app.clock.waitReady(15000);
+
+  /* ── 引擎优先级 ────────────────────────────────────────────────────
+     0) WebCodecs：原生解码，D 档可用，服务端几乎不耗 CPU
+     1) 帧流：服务端 ffmpeg 出 JPEG，D 档一定可用（兜底）
+     2) <video>：仅 P 档，最后手段
+     注意：重写前还有一条 NativeEngine 走 /api/stream/:filename，
+     实测该路由不存在（404），已删除这条死分支。                        */
+  let eng = null;
+  if (video.codec === 'h264' && video.segments === 'ready') {
+    eng = createWebCodecsEngine(video);
+  }
+  if (eng) {
+    setEngineChip('原生解码 · 准备中…', 'webcodecs');
+    try {
+      await eng.start(0);
+      app.engine = eng;
+      setEngineChip('原生解码 · D 档可用', 'webcodecs');
+    } catch (e) {
+      log('wc-init-fail', String(e && e.message));
+      try { eng.dispose(); } catch {}
+      eng = null;
+    }
+  }
+  if (!eng) {
+    eng = createFramesEngine(video, 0);
+    app.engine = eng;
+    setEngineChip('帧流 · D 档可用', 'frames');
+    eng.start(0);
+  }
+
+  startLoop();
+
+  try {
+    await audio.play();
+    app.playing = true;
+    app.userPaused = false;
+    setOverlay(false);
+  } catch {
+    // 自动播放被拒：让用户点一下（车机上首次交互后即恢复）
+    setOverlay(true, '点此开始播放', '浏览器阻止了自动播放');
+    overlay.style.cursor = 'pointer';
+    overlay.onclick = () => {
+      overlay.onclick = null;
+      overlay.style.cursor = '';
+      audio.play()
+        .then(() => { app.playing = true; app.userPaused = false; setOverlay(false); updatePlayBtn(); })
+        .catch(() => toastDanger('播放失败'));
+    };
+  }
+
+  updatePlayBtn();
+  syncMeta();
+  updateProgress();
+
+  // 音频异常兜底
+  app.clock.watch({
+    onFail: (why) => {
+      log('audio-fail', why);
+      if (why === 'ended') { onEnded(); return; }
+      toastWarn('音频异常，正在重连');
+      const pos = app.clock ? (app.clock.position() || 0) : 0;
+      audio.src = `/api/audio/${enc(video.name)}?t=${Date.now()}`;
+      const onMeta = () => {
+        audio.removeEventListener('loadedmetadata', onMeta);
+        try { audio.currentTime = pos; } catch {}
+        audio.play().catch(() => {});
+      };
+      audio.addEventListener('loadedmetadata', onMeta);
+    },
+  });
+
+  log('play-video', { name: video.name, engine: app.engine.kind });
+}
+
+function stopPlayback() {
+  stopLoop();
+  if (app.engine) { try { app.engine.dispose(); } catch {} app.engine = null; }
+  if (app.clock) { app.clock.detach(); app.clock = null; }
+  try { audio.pause(); audio.removeAttribute('src'); audio.load(); } catch {}
+  app.playing = false;
+  app.userPaused = true;
+  app.duration = 0;
+  setChip($('#chipBuf'), '', '');
+}
+
+function onEnded() {
+  app.playing = false;
+  updatePlayBtn();
+  const i = app.videos.findIndex((v) => v.name === app.current?.name);
+  if (i >= 0 && i + 1 < app.videos.length) playVideo(i + 1);
+  else setOverlay(true, '播放结束', app.current?.name || '');
+}
+
+function togglePlay() {
+  if (!app.current) return;
+  if (app.userPaused) {
+    app.userPaused = false;
+    audio.play().catch(() => {});
+    app.playing = true;
+  } else {
+    app.userPaused = true;
+    audio.pause();
+    app.playing = false;
+  }
+  updatePlayBtn();
+}
+
+function updatePlayBtn() {
+  $('#playBtn').textContent = (app.playing && !app.userPaused) ? '⏸' : '▶';
+  MediaCtl.setState(app.playing && !app.userPaused ? 'playing' : 'paused');
+}
+
+function seekTo(sec) {
+  if (!app.current) return;
+  const d = app.duration || 0;
+  const target = Math.max(0, d ? Math.min(sec, d - 0.2) : sec);
+  audio.currentTime = target;
+  if (app.engine && app.engine.seek) app.engine.seek(target);
+  app.clock.resync();
+  updateProgress();
+}
+
+/* ============================================================================
+   进度条
+   ============================================================================ */
+
+const progress = $('#progress');
+
+function fracFromEvent(e) {
+  const r = progress.getBoundingClientRect();
+  return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+}
+
+progress.addEventListener('pointerdown', (e) => {
+  if (!app.current) return;
+  app.dragging = true;
+  progress.setPointerCapture(e.pointerId);
+  $('#knob').hidden = false;
+  previewFrac(fracFromEvent(e));
+});
+
+progress.addEventListener('pointermove', (e) => {
+  if (!app.dragging) return;
+  previewFrac(fracFromEvent(e));
+});
+
+progress.addEventListener('pointerup', (e) => {
+  if (!app.dragging) return;
+  app.dragging = false;
+  $('#knob').hidden = true;
+  const f = fracFromEvent(e);
+  if (app.duration) seekTo(f * app.duration);
+});
+
+progress.addEventListener('pointercancel', () => {
+  app.dragging = false;
+  $('#knob').hidden = true;
+});
+
+function previewFrac(f) {
+  $('#fill').style.width = (f * 100) + '%';
+  $('#knob').style.left = (f * 100) + '%';
+  if (app.duration) $('#curTime').textContent = fmtTime(f * app.duration);
+}
+
+function updateProgress() {
+  if (!app.clock || !app.current) return;
+  const pos = app.clock.position();
+  const dur = app.duration || app.clock.duration() || 0;
+
+  if (pos !== null && dur > 0 && !app.dragging) {
+    const f = Math.max(0, Math.min(1, pos / dur));
+    $('#fill').style.width = (f * 100) + '%';
+    $('#knob').style.left = (f * 100) + '%';
+    $('#curTime').textContent = fmtTime(pos);
+  }
+  $('#durTime').textContent = fmtTime(dur);
+
+  // 缓冲条
+  if (app.engine && app.engine.kind === 'frames') {
+    const last = app.engine.stream.buffer.length
+      ? app.engine.stream.buffer[app.engine.stream.buffer.length - 1].t : 0;
+    if (dur > 0) $('#buffered').style.width = Math.min(100, (last / dur) * 100) + '%';
+  } else {
+    try {
+      if (audio.buffered.length && dur > 0) {
+        const end = audio.buffered.end(audio.buffered.length - 1);
+        $('#buffered').style.width = Math.min(100, (end / dur) * 100) + '%';
+      }
+    } catch {}
+  }
+
+  // 状态芯片
+  if (app.engine) setChip($('#chipBuf'), app.engine.statsText(), '');
+
+  // 字幕
+  updateSubtitle(pos);
+}
+
+setInterval(updateProgress, 250);
+
+/* ============================================================================
+   字幕
+   ============================================================================ */
+
+function parseSRT(text) {
+  const cues = [];
+  const blocks = String(text).replace(/\r/g, '').split(/\n\n+/);
+  for (const b of blocks) {
+    const lines = b.split('\n').filter(Boolean);
+    if (lines.length < 2) continue;
+    const tl = lines.find((l) => l.includes('-->'));
+    if (!tl) continue;
+    const m = /(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)/.exec(tl);
+    if (!m) continue;
+    const start = +m[1] * 3600 + +m[2] * 60 + +m[3] + +m[4] / 1000;
+    const end   = +m[5] * 3600 + +m[6] * 60 + +m[7] + +m[8] / 1000;
+    const idx = lines.indexOf(tl);
+    const text = lines.slice(idx + 1).join('\n').trim();
+    if (text) cues.push({ start, end, text });
+  }
+  return cues.sort((a, b) => a.start - b.start);
+}
+
+function updateSubtitle(pos) {
+  const node = $('#subtitle');
+  if (!app.cues.length || pos === null) { node.hidden = true; return; }
+  const cue = app.cues.find((c) => pos >= c.start && pos <= c.end);
+  if (cue) { node.textContent = cue.text; node.hidden = false; }
+  else node.hidden = true;
+}
+
+async function loadSubtitles() {
+  const sel = $('#subSelect');
+  let subs = [];
+  try { subs = await getJSON('/api/subtitles', { timeout: 8000 }); } catch {}
+
+  replace(sel, [el('option', { value: '', text: '无字幕' })].concat(
+    (Array.isArray(subs) ? subs : []).map((s) => el('option', { value: s.path || s.name, text: s.name }))
+  ));
+}
+
+$('#subSelect').addEventListener('change', async (e) => {
+  const path = e.target.value;
+  if (!path) { app.cues = []; $('#subtitle').hidden = true; return; }
+  try {
+    const name = path.split('/').pop();
+    const res = await fetch(`/api/subtitle/${encodeURIComponent(name)}`);
+    const text = await res.text();
+    app.cues = parseSRT(text);
+    toastOk(`已加载字幕（${app.cues.length} 条）`);
+  } catch {
+    toastDanger('字幕加载失败');
+    app.cues = [];
+  }
+});
+
+/* ============================================================================
+   音量 / 音画补偿 / 全屏
+   ============================================================================ */
+
+const volKey = 'tp_volume';
+const savedVol = parseFloat(localStorage.getItem(volKey));
+if (Number.isFinite(savedVol)) { audio.volume = savedVol; $('#volume').value = String(savedVol); }
+updateVolIcon();
+
+$('#volume').addEventListener('input', (e) => {
+  audio.volume = parseFloat(e.target.value);
+  try { localStorage.setItem(volKey, String(audio.volume)); } catch {}
+  updateVolIcon();
+});
+
+function updateVolIcon() {
+  $('#volIcon').textContent = audio.volume === 0 ? '🔇' : audio.volume < 0.5 ? '🔉' : '🔊';
+}
+
+function renderSync() {
+  $('#syncVal').textContent = app.syncLag.toFixed(1) + 's';
+}
+
+function adjustSync(d) {
+  app.syncLag = Math.max(0, Math.min(3, +(app.syncLag + d).toFixed(2)));
+  saveSyncLag(app.syncLag);
+  // 两个引擎都要更新补偿值（符号统一为：画面 = 音频 - syncLag）
+  if (app.engine) {
+    if (app.engine.stream) app.engine.stream.syncLag = app.syncLag;
+    if (app.engine.eng) app.engine.eng.syncLag = app.syncLag;
+  }
+  renderSync();
+  log('sync-adjust', app.syncLag);
+}
+
+$('#syncPlus').addEventListener('click', () => adjustSync(0.1));
+$('#syncMinus').addEventListener('click', () => adjustSync(-0.1));
+renderSync();
+
+$('#fsBtn').addEventListener('click', async () => {
+  const appEl = $('#app');
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await (appEl.requestFullscreen?.() ?? appEl.webkitRequestFullscreen?.());
+  } catch {
+    // QtWebEngine 的 Fullscreen API 不可靠：用 CSS 伪全屏兜底
+    appEl.classList.toggle('is-fs');
+  }
+  const q = QUALITIES[app.qi];
+  sizeCanvas(canvas, q, !!document.fullscreenElement || appEl.classList.contains('is-fs'));
+});
+
+document.addEventListener('fullscreenchange', () => {
+  const q = QUALITIES[app.qi];
+  sizeCanvas(canvas, q, !!document.fullscreenElement);
+});
+
+/* ============================================================================
+   媒体键 / 方向盘
+   ============================================================================ */
+
+MediaCtl.bind({
+  play: () => { if (app.userPaused) togglePlay(); },
+  pause: () => { if (!app.userPaused) togglePlay(); },
+  toggle: togglePlay,
+  stop: () => { stopPlayback(); setOverlay(true, '已停止', ''); updatePlayBtn(); },
+  next: () => { const i = app.videos.findIndex((v) => v.name === app.current?.name); if (i >= 0 && i + 1 < app.videos.length) playVideo(i + 1); },
+  prev: () => { const i = app.videos.findIndex((v) => v.name === app.current?.name); if (i > 0) playVideo(i - 1); },
+  seekBy: (d) => { if (app.clock) seekTo((app.clock.position() || 0) + d); },
+  seekTo: (s) => seekTo(s),
+  isPlaying: () => app.playing && !app.userPaused,
+});
+
+function syncMeta() {
+  if (!app.current) return;
+  const i = app.videos.findIndex((v) => v.name === app.current.name);
+  MediaCtl.setMeta({
+    title: app.current.name.replace(/\.[^.]+$/, ''),
+    artist: '本机视频',
+    album: `${i + 1}/${app.videos.length}`,
+    artwork: MediaCtl.cover(app.current.name),
+  });
+}
+
+// 进度同步给车机媒体系统（节流到 1 秒一次）
+setInterval(() => {
+  if (!app.clock || !app.current) return;
+  const dur = app.duration || 0;
+  const pos = app.clock.position();
+  if (dur > 0 && pos !== null) MediaCtl.setPosition(dur, pos, 1);
+}, 1000);
+
+/* ============================================================================
+   交互绑定
+   ============================================================================ */
+
+$('#playBtn').addEventListener('click', togglePlay);
+$('#stopBtn').addEventListener('click', () => { stopPlayback(); setOverlay(true, '已停止', ''); updatePlayBtn(); });
+$('#prevBtn').addEventListener('click', () => {
+  const i = app.videos.findIndex((v) => v.name === app.current?.name);
+  if (i > 0) playVideo(i - 1);
+});
+$('#nextBtn').addEventListener('click', () => {
+  const i = app.videos.findIndex((v) => v.name === app.current?.name);
+  if (i >= 0 && i + 1 < app.videos.length) playVideo(i + 1);
+});
+
+document.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+  else if (e.key === 'ArrowLeft')  seekTo((app.clock?.position() || 0) - 10);
+  else if (e.key === 'ArrowRight') seekTo((app.clock?.position() || 0) + 10);
+  else if (e.key === 'ArrowUp')   { e.preventDefault(); audio.volume = Math.min(1, audio.volume + 0.1); $('#volume').value = String(audio.volume); updateVolIcon(); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); audio.volume = Math.max(0, audio.volume - 0.1); $('#volume').value = String(audio.volume); updateVolIcon(); }
+});
+
+// 页面卸载时停掉流，避免服务端 ffmpeg 空转
+window.addEventListener('pagehide', () => { try { stopPlayback(); } catch {} });
+
+/* ============================================================================
+   启动
+   ============================================================================ */
+
+startReporting();
+bindPanel();
+loadVideos();
+loadSubtitles();
+showVersionBadge();
+setOverlay(true, '从左侧选择一个视频开始播放', '');
+log('player-ready');
+</script>
+</body>
+</html>
